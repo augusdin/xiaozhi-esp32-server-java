@@ -17,7 +17,8 @@ services:
       start_period: 30s
 
   funasr:
-    image: registry.cn-hangzhou.aliyuncs.com/funasr_repo/funasr:funasr-runtime-sdk-online-cpu-0.1.12
+    # 使用 GHCR 镜像，避免阿里云镜像跨地域拉取缓慢
+    image: ghcr.io/augusdin/funasr:funasr-runtime-sdk-online-cpu-0.1.12
     ports:
       - "10095:10095"
     networks:
@@ -43,7 +44,8 @@ services:
         reservations:
           memory: 400M
     healthcheck:
-      test: ["CMD", "netstat", "-tuln", "|", "grep", ":10095"]
+      # 使用 CMD-SHELL 以支持管道符，确保健康检查生效
+      test: ["CMD-SHELL", "netstat -tuln | grep :10095"]
       interval: 30s
       timeout: 10s
       retries: 3
