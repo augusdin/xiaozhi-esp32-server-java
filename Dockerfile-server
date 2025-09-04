@@ -45,60 +45,35 @@ RUN APP_VERSION=$(grep -A1 "<artifactId>xiaozhi.server</artifactId>" pom.xml | \
 # ================================
 # Stage 3: Runtime Environment
 # ================================
-FROM eclipse-temurin:21-jre-alpine AS runtime
+FROM eclipse-temurin:21-jre AS runtime
 
-# 安装运行时依赖，使用Alpine减少镜像大小
-RUN apk add --no-cache \
+# 安装运行时依赖
+RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
-    bash \
     curl \
-    && rm -rf /var/cache/apk/*
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
 # 复制应用JAR文件
-COPY --from=app-builder /build/target/xiaozhi.server-*.jar /app/app.jar
+COPY --from=app-builder /build/target/xiaozhi.server-*.jar /app/
 COPY --from=app-builder /build/app_version.env /app/
 
 # 创建空的models目录（保持兼容性）
 RUN mkdir -p /app/models
 
-# 创建优化的启动脚本 - 适配2GB RAM环境
+# 创建优化的启动脚本 - 适配2GB RAM环境，使用原版格式
 RUN echo '#!/bin/bash\n\
-set -e\n\
 if [ -f /app/app_version.env ]; then\n\
-  source /app/app_version.env\n\
-  echo "Starting Xiaozhi Server version: ${APP_VERSION}"\n\
-else\n\
-  echo "Starting Xiaozhi Server"\n\
+  . /app/app_version.env\n\
 fi\n\
-\n\
-# 优化JVM参数适配2GB RAM环境\n\
-exec java \\\n\
-  -server \\\n\
-  -Xms128m \\\n\
-  -Xmx400m \\\n\
-  -XX:+UseG1GC \\\n\
-  -XX:MaxGCPauseMillis=200 \\\n\
-  -XX:G1HeapRegionSize=8m \\\n\
-  -XX:+UnlockExperimentalVMOptions \\\n\
-  -XX:+UseJVMCICompiler \\\n\
-  -Djava.security.egd=file:/dev/./urandom \\\n\
-  -Dspring.profiles.active=prod \\\n\
-  -jar /app/app.jar\n\
+echo "Starting Xiaozhi Server version: ${APP_VERSION}"\n\
+java -Xms128m -Xmx400m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -Djava.security.egd=file:/dev/./urandom -Dspring.profiles.active=prod -jar /app/xiaozhi.server-${APP_VERSION}.jar\n\
 ' > /app/start.sh && chmod +x /app/start.sh
 
 # 健康检查
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
   CMD curl -f http://localhost:8091/actuator/health || exit 1
 
-# 创建非root用户运行应用
-RUN addgroup -g 1001 -S xiaozhi && \
-    adduser -u 1001 -S xiaozhi -G xiaozhi && \
-    chown -R xiaozhi:xiaozhi /app
-
-USER xiaozhi
-
-EXPOSE 8091
-
-CMD ["/app/start.sh"]
+# 使用bash执行启动脚本 - 保持原版格式
+CMD ["/bin/bash", "/app/start.sh"]
