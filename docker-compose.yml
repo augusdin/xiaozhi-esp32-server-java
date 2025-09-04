@@ -34,13 +34,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile-server
-      args:
-        - VOSK_MODEL_SIZE=${VOSK_MODEL_SIZE:-small}
-      # 优化构建缓存
-      cache_from:
-        - eclipse-temurin:21-jdk
-        - eclipse-temurin:21-jre-alpine
-        - alpine:latest
+      # 移除Vosk模型相关配置
     depends_on:
       mysql:
         condition: service_healthy
@@ -52,16 +46,23 @@ services:
       - SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/xiaozhi?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
       - SPRING_DATASOURCE_USERNAME=xiaozhi
       - SPRING_DATASOURCE_PASSWORD=123456
-      - JAVA_OPTS=-Xms256m -Xmx768m -XX:+UseG1GC
-    # 移除不必要的volumes，现在构建过程更高效
+      # 配置FunASR服务地址，可以指向外部FunASR服务
+      - FUNASR_API_URL=ws://localhost:10095/
+    # 优化内存限制适配2GB RAM环境
+    deploy:
+      resources:
+        limits:
+          memory: 450M
+        reservations:
+          memory: 150M
     restart: unless-stopped
-    # 添加健康检查支持
+    # 增加健康检查启动时间，因为无需加载模型启动更快
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8091/actuator/health"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 60s
+      start_period: 45s
 
 networks:
   app-network:

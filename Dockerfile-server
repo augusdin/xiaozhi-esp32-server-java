@@ -15,38 +15,7 @@ COPY pom.xml ./
 RUN mvn dependency:go-offline -B
 
 # ================================
-# Stage 2: Model Downloader
-# ================================
-FROM alpine:latest AS model-downloader
-
-# 添加构建参数，默认使用小模型提高速度
-ARG VOSK_MODEL_SIZE=small
-
-# 安装下载工具
-RUN apk add --no-cache wget unzip
-
-WORKDIR /models
-
-# 复制现有模型文件
-COPY ./models/silero_vad.onnx ./silero_vad.onnx
-
-# 下载Vosk模型并优化
-RUN if [ "$VOSK_MODEL_SIZE" = "small" ]; then \
-        echo "Downloading optimized small Vosk model..." && \
-        wget -q https://alphacephei.com/vosk/models/vosk-model-small-cn-0.22.zip && \
-        unzip -q vosk-model-small-cn-0.22.zip && \
-        mv vosk-model-small-cn-0.22 vosk-model && \
-        rm vosk-model-small-cn-0.22.zip; \
-    else \
-        echo "Downloading standard Vosk model..." && \
-        wget -q https://alphacephei.com/vosk/models/vosk-model-cn-0.22.zip && \
-        unzip -q vosk-model-cn-0.22.zip && \
-        mv vosk-model-cn-0.22 vosk-model && \
-        rm vosk-model-cn-0.22.zip; \
-    fi
-
-# ================================
-# Stage 3: Application Builder
+# Stage 2: Application Builder  
 # ================================
 FROM eclipse-temurin:21-jdk AS app-builder
 
@@ -74,7 +43,7 @@ RUN APP_VERSION=$(grep -A1 "<artifactId>xiaozhi.server</artifactId>" pom.xml | \
     echo "APP_VERSION=${APP_VERSION}" > /build/app_version.env
 
 # ================================
-# Stage 4: Runtime Environment
+# Stage 3: Runtime Environment
 # ================================
 FROM eclipse-temurin:21-jre-alpine AS runtime
 
@@ -91,10 +60,10 @@ WORKDIR /app
 COPY --from=app-builder /build/target/xiaozhi.server-*.jar /app/app.jar
 COPY --from=app-builder /build/app_version.env /app/
 
-# 复制模型文件
-COPY --from=model-downloader /models /app/models
+# 创建空的models目录（保持兼容性）
+RUN mkdir -p /app/models
 
-# 创建优化的启动脚本
+# 创建优化的启动脚本 - 适配2GB RAM环境
 RUN echo '#!/bin/bash\n\
 set -e\n\
 if [ -f /app/app_version.env ]; then\n\
@@ -104,13 +73,14 @@ else\n\
   echo "Starting Xiaozhi Server"\n\
 fi\n\
 \n\
-# JVM优化参数\n\
+# 优化JVM参数适配2GB RAM环境\n\
 exec java \\\n\
   -server \\\n\
-  -Xms256m \\\n\
-  -Xmx768m \\\n\
+  -Xms128m \\\n\
+  -Xmx400m \\\n\
   -XX:+UseG1GC \\\n\
   -XX:MaxGCPauseMillis=200 \\\n\
+  -XX:G1HeapRegionSize=8m \\\n\
   -XX:+UnlockExperimentalVMOptions \\\n\
   -XX:+UseJVMCICompiler \\\n\
   -Djava.security.egd=file:/dev/./urandom \\\n\
@@ -119,7 +89,7 @@ exec java \\\n\
 ' > /app/start.sh && chmod +x /app/start.sh
 
 # 健康检查
-HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
   CMD curl -f http://localhost:8091/actuator/health || exit 1
 
 # 创建非root用户运行应用

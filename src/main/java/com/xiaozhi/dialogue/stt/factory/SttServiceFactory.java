@@ -22,54 +22,41 @@ public class SttServiceFactory {
     // 缓存已初始化的服务：key format: "provider:configId"
     private final Map<String, SttService> serviceCache = new ConcurrentHashMap<>();
 
-    // 默认服务提供商名称
-    private static final String DEFAULT_PROVIDER = "vosk";
+    // 默认服务提供商名称 - 改为FunASR以避免内存问题
+    private static final String DEFAULT_PROVIDER = "funasr";
 
-    // 标记Vosk是否初始化成功
-    private boolean voskInitialized = false;
+    // 默认FunASR服务URL (可通过环境变量覆盖)
+    private static final String DEFAULT_FUNASR_URL = System.getenv().getOrDefault("FUNASR_API_URL", "ws://localhost:10095/");
 
-    // 备选默认提供商（当Vosk初始化失败时使用）
+    // 标记默认服务是否初始化成功
+    private boolean defaultServiceInitialized = false;
+
+    // 备选默认提供商（当默认初始化失败时使用）
     private String fallbackProvider = null;
 
     /**
-     * 应用启动时自动初始化Vosk服务
+     * 应用启动时自动初始化默认语音识别服务
      */
     @PostConstruct
     public void initializeDefaultSttService() {
-        logger.info("正在初始化默认语音识别服务(Vosk)...");
-        initializeVosk();
-        if (voskInitialized) {
-            logger.info("默认语音识别服务(Vosk)初始化成功，可直接使用");
-        } else {
-            logger.warn("默认语音识别服务(Vosk)初始化失败，将在需要时尝试使用备选服务");
-        }
-    }
-
-    /**
-     * 初始化Vosk服务
-     */
-    private synchronized SttService initializeVosk() {
-        if (serviceCache.containsKey(DEFAULT_PROVIDER)) {
-            return serviceCache.get(DEFAULT_PROVIDER);
-        }
-
+        logger.info("正在初始化默认语音识别服务(FunASR)...");
         try {
-            var voskService = new VoskSttService();
-            voskService.initialize();
+            // 创建默认FunASR配置
+            SysConfig defaultConfig = new SysConfig()
+                .setProvider(DEFAULT_PROVIDER)
+                .setApiUrl(DEFAULT_FUNASR_URL)
+                .setConfigId(-1);
             
-            // 检查模型是否真正加载成功
-            if (voskService instanceof VoskSttService && !((VoskSttService)voskService).isModelLoaded()) {
-                throw new Exception("Vosk model was not properly loaded");
-            }
+            // 初始化FunASR服务
+            SttService defaultService = createApiService(defaultConfig);
+            serviceCache.put(DEFAULT_PROVIDER, defaultService);
+            defaultServiceInitialized = true;
             
-            serviceCache.put(DEFAULT_PROVIDER, voskService);
-            voskInitialized = true;
-            logger.info("Vosk STT服务初始化成功");
-            return voskService;
+            logger.info("默认语音识别服务(FunASR)初始化成功，服务地址: {}", DEFAULT_FUNASR_URL);
         } catch (Exception e) {
-            voskInitialized = false;
+            logger.warn("默认语音识别服务(FunASR)初始化失败: {}，将在配置后使用", e.getMessage());
+            defaultServiceInitialized = false;
         }
-        return null;
     }
 
     /**
@@ -84,7 +71,10 @@ public class SttServiceFactory {
      */
     public SttService getSttService(SysConfig config) {
         if (config == null) {
-            config = new SysConfig().setProvider(DEFAULT_PROVIDER).setConfigId(-1);
+            config = new SysConfig()
+                .setProvider(DEFAULT_PROVIDER)
+                .setApiUrl(DEFAULT_FUNASR_URL)
+                .setConfigId(-1);
         }
 
         // 对于API服务，使用"provider:configId"作为缓存键，确保每个配置使用独立的服务实例
@@ -116,16 +106,17 @@ public class SttServiceFactory {
             case "aliyun" -> new AliyunSttService(config);
             case "funasr" -> new FunASRSttService(config);
             case "xfyun" -> new XfyunSttService(config);
-            default -> {
-                var service = initializeVosk();
-                if (service == null) {
-                    // If vosk create failed, return fallback stt service
-                    if (fallbackProvider != null && serviceCache.containsKey(fallbackProvider)) {
-                        yield serviceCache.get(fallbackProvider);
-                    }
-                    throw new RuntimeException("Create vosk service failed");
+            case "vosk" -> {
+                // 仅在明确指定时才尝试初始化Vosk
+                logger.warn("Vosk模型已禁用以节省内存，建议使用FunASR或其他云服务");
+                if (fallbackProvider != null && serviceCache.containsKey(fallbackProvider)) {
+                    yield serviceCache.get(fallbackProvider);
                 }
-                yield service;
+                throw new RuntimeException("Vosk service is disabled for memory optimization. Please use FunASR or other cloud services.");
+            }
+            default -> {
+                // 默认使用FunASR
+                yield new FunASRSttService(config);
             }
         };
     }
