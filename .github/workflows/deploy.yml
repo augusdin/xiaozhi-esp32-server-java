@@ -27,18 +27,6 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Mirror FunASR image to GHCR (once per tag)
-      run: |
-        set -euo pipefail
-        SRC=registry.cn-hangzhou.aliyuncs.com/funasr_repo/funasr:funasr-runtime-sdk-online-cpu-0.1.12
-        DST=ghcr.io/${{ github.repository_owner }}/funasr:funasr-runtime-sdk-online-cpu-0.1.12
-        echo "Pulling $SRC ..."
-        docker pull "$SRC"
-        echo "Tagging to $DST ..."
-        docker tag "$SRC" "$DST"
-        echo "Pushing $DST ..."
-        docker push "$DST"
-
     - name: Extract metadata
       id: meta
       uses: docker/metadata-action@v5
@@ -82,10 +70,13 @@ jobs:
           # Stop existing services
           docker-compose down 2>/dev/null || true
           
-          # Pull latest images and start services
-          # 先预拉取 FunASR（GHCR），避免首次 up 阶段等待
-          docker-compose pull funasr || true
-          VOSK_MODEL_SIZE=small docker-compose up -d --build
+          # Start core services only (skip FunASR)
+          # 先启动 MySQL，等待健康，再启动 server、node 并跳过依赖
+          docker-compose up -d mysql
+          # 等待 MySQL 健康（最多90秒）
+          timeout 90s bash -c 'until [ "$(docker inspect -f {{.State.Health.Status}} $(docker-compose ps -q mysql))" = "healthy" ]; do sleep 3; done' || true
+          # 构建并启动 server、node，跳过依赖以避免触发 funasr 拉取
+          VOSK_MODEL_SIZE=small docker-compose up -d --build --no-deps server node
           
           # Wait for services to be ready
           sleep 60
