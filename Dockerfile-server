@@ -50,6 +50,11 @@ RUN if [ "$VOSK_MODEL_SIZE" = "small" ]; then \
 # ================================
 FROM eclipse-temurin:21-jdk AS app-builder
 
+# 安装Maven
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    maven \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /build
 
 # 复制缓存的依赖
