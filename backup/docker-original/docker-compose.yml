@@ -4,11 +4,11 @@ services:
       context: .
       dockerfile: Dockerfile-mysql
     ports:
-      - "13306:3306"
+      - "13306:3306"  # 修改为 13306 或其他未使用的端口
     networks:
       - app-network
     volumes:
-      - mysql_data:/var/lib/mysql
+      - mysql_data:/var/lib/mysql  # 持久化数据
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "xiaozhi", "-p123456"]
       interval: 10s
@@ -36,11 +36,9 @@ services:
       dockerfile: Dockerfile-server
       args:
         - VOSK_MODEL_SIZE=${VOSK_MODEL_SIZE:-small}
-      # 优化构建缓存
+      # 添加构建缓存设置
       cache_from:
-        - eclipse-temurin:21-jdk
-        - eclipse-temurin:21-jre-alpine
-        - alpine:latest
+        - eclipse-temurin:21-jre
     depends_on:
       mysql:
         condition: service_healthy
@@ -52,20 +50,16 @@ services:
       - SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/xiaozhi?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
       - SPRING_DATASOURCE_USERNAME=xiaozhi
       - SPRING_DATASOURCE_PASSWORD=123456
-      - JAVA_OPTS=-Xms256m -Xmx768m -XX:+UseG1GC
-    # 移除不必要的volumes，现在构建过程更高效
-    restart: unless-stopped
-    # 添加健康检查支持
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8091/actuator/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
+    volumes:
+      - maven_repo:/root/.m2/repository  # 持久化Maven仓库
+      - vosk_models:/vosk_cache  # 持久化Vosk模型
+    restart: on-failure  # 添加重启策略，如果启动失败会自动重试
 
 networks:
   app-network:
     driver: bridge
 
 volumes:
-  mysql_data:
+  mysql_data:  # 定义持久化卷
+  maven_repo:  # 持久化Maven仓库
+  vosk_models:  # 持久化Vosk模型

@@ -1,0 +1,11 @@
+# 排除其他不需要的文件/目录
+.git/
+.github/
+.idea/
+.vscode/
+node_modules/
+target/
+audio/
+avatar/
+*.md
+*.log
