@@ -54,20 +54,30 @@ jobs:
         username: ${{ secrets.HOST_USER }}
         password: ${{ secrets.HOST_PASSWORD }}
         script: |
-          # Stop existing containers
-          docker stop xiaozhi-server 2>/dev/null || true
-          docker rm xiaozhi-server 2>/dev/null || true
+          # Create deployment directory
+          mkdir -p /opt/xiaozhi-deployment
+          cd /opt/xiaozhi-deployment
           
-          # Pull latest image
-          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:main
+          # Clone or update repository
+          if [ -d "xiaozhi-esp32-server-java" ]; then
+            cd xiaozhi-esp32-server-java
+            git pull origin main
+          else
+            git clone https://github.com/augusdin/xiaozhi-esp32-server-java.git
+            cd xiaozhi-esp32-server-java
+          fi
           
-          # Run new container
-          docker run -d \
-            --name xiaozhi-server \
-            -p 8080:8080 \
-            -p 8181:8181 \
-            --restart unless-stopped \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:main
+          # Stop existing services
+          docker-compose down 2>/dev/null || true
           
-          # Clean up old images
-          docker image prune -f
+          # Pull latest images and start services
+          VOSK_MODEL_SIZE=small docker-compose up -d --build
+          
+          # Wait for services to be ready
+          sleep 60
+          
+          # Show service status
+          docker-compose ps
+          
+          # Show logs for verification
+          docker-compose logs --tail=20
