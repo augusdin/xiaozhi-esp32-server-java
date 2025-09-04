@@ -1,0 +1,65 @@
+name: Deploy to Remote Server
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup SSH key
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        ssh-keyscan -H 107.173.38.186 >> ~/.ssh/known_hosts
+    
+    - name: Deploy to server
+      run: |
+        ssh root@107.173.38.186 << 'EOF'
+          # Create deployment directory if it doesn't exist
+          mkdir -p /opt/xiaozhi-deployment
+          cd /opt/xiaozhi-deployment
+          
+          # Clone or update repository
+          if [ -d "xiaozhi-esp32-server-java" ]; then
+            cd xiaozhi-esp32-server-java
+            git pull origin main
+          else
+            git clone https://github.com/augusdin/xiaozhi-esp32-server-java.git
+            cd xiaozhi-esp32-server-java
+          fi
+          
+          # Stop existing containers if running
+          docker-compose down || true
+          
+          # Build and start containers
+          docker-compose up -d --build
+          
+          # Show container status
+          docker-compose ps
+          
+          # Show logs for verification
+          docker-compose logs --tail=50
+        EOF
+    
+    - name: Verify deployment
+      run: |
+        sleep 30
+        ssh root@107.173.38.186 << 'EOF'
+          cd /opt/xiaozhi-deployment/xiaozhi-esp32-server-java
+          echo "=== Container Status ==="
+          docker-compose ps
+          
+          echo "=== Health Check ==="
+          curl -f http://localhost:8091/actuator/health || echo "Health check failed"
+          
+          echo "=== Recent Logs ==="
+          docker-compose logs --tail=20
+        EOF
