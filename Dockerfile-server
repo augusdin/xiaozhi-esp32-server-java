@@ -59,8 +59,9 @@ WORKDIR /app
 COPY --from=app-builder /build/target/xiaozhi.server-*.jar /app/
 COPY --from=app-builder /build/app_version.env /app/
 
-# 创建空的models目录（保持兼容性）
+# 创建models目录并复制必要的VAD模型
 RUN mkdir -p /app/models
+COPY ./models/silero_vad.onnx /app/models/silero_vad.onnx
 
 # 创建优化的启动脚本 - 适配2GB RAM环境，使用原版格式
 RUN echo '#!/bin/bash\n\
