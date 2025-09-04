@@ -48,6 +48,9 @@ services:
       - SPRING_DATASOURCE_PASSWORD=123456
       # 配置FunASR服务地址，可以指向外部FunASR服务
       - FUNASR_API_URL=ws://localhost:10095/
+      # 邮箱配置
+      - EMAIL_SMTP_USERNAME=noreply@xiaozhi.com
+      - EMAIL_SMTP_PASSWORD=defaultpassword
     # 优化内存限制适配2GB RAM环境
     deploy:
       resources:
