@@ -28,6 +28,14 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
 
+    - name: Optional GHCR PAT login (override actor login if provided)
+      if: secrets.GHCR_PAT != ''
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ secrets.GHCR_USERNAME }}
+        password: ${{ secrets.GHCR_PAT }}
+
     - name: Extract metadata (server)
       id: meta_server
       uses: docker/metadata-action@v5
@@ -56,8 +64,8 @@ jobs:
         push: true
         tags: ${{ steps.meta_server.outputs.tags }}
         labels: ${{ steps.meta_server.outputs.labels }}
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
+        cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-server:buildcache
+        cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-server:buildcache,mode=max
 
     - name: Build and push Docker image (node)
       uses: docker/build-push-action@v5
@@ -67,8 +75,8 @@ jobs:
         push: true
         tags: ${{ steps.meta_node.outputs.tags }}
         labels: ${{ steps.meta_node.outputs.labels }}
-        cache-from: type=gha
-        cache-to: type=gha,mode=max
+        cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-node:buildcache
+        cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-node:buildcache,mode=max
 
     - name: Deploy to remote server
       if: github.ref == 'refs/heads/main'
