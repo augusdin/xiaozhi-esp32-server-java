@@ -70,6 +70,9 @@ public class ChatService {
     @Resource
     private ChatModelFactory chatModelFactory;
 
+    @Resource
+    private com.xiaozhi.integration.memory.MemoryOrchestrator memoryOrchestrator;
+
     /**
      * 处理用户查询（同步方式）
      * 
@@ -91,6 +94,17 @@ public class ChatService {
 
             UserMessage userMessage = new UserMessage(message);
             List<Message> messages = session.getConversation().prompt(userMessage);
+            // 注入 MemOS 检索到的记忆上下文（作为系统补充）
+            try {
+                if (memoryOrchestrator != null && memoryOrchestrator.isMemosEnabled()) {
+                    String memContext = memoryOrchestrator.buildMemorySystemPrompt(session, message);
+                    if (memContext != null && !memContext.isBlank()) {
+                        List<Message> enriched = new java.util.ArrayList<>(messages);
+                        enriched.add(1, new SystemMessage(memContext));
+                        messages = enriched;
+                    }
+                }
+            } catch (Exception ignore) {}
             Prompt prompt = new Prompt(messages,chatOptions);
 
             ChatResponse chatResponse = chatModel.call(prompt);
@@ -103,6 +117,11 @@ public class ChatService {
             Thread.startVirtualThread(() -> {// 异步持久化
                 // 保存AI消息，会被持久化至数据库。
                 session.getConversation().addMessage(userMessage,session.getUserTimeMillis(),assistantMessage,session.getAssistantTimeMillis());
+                try {
+                    if (memoryOrchestrator != null) {
+                        memoryOrchestrator.persistAsync(session, message, assistantMessage.getText());
+                    }
+                } catch (Exception ignore) {}
             });
             return assistantMessage.getText();
 
@@ -130,6 +149,17 @@ public class ChatService {
 
         UserMessage userMessage = new UserMessage(message);
         List<Message> messages = session.getConversation().prompt(userMessage);
+        // 注入 MemOS 检索到的记忆上下文（作为系统补充）
+        try {
+            if (memoryOrchestrator != null && memoryOrchestrator.isMemosEnabled()) {
+                String memContext = memoryOrchestrator.buildMemorySystemPrompt(session, message);
+                if (memContext != null && !memContext.isBlank()) {
+                    List<Message> enriched = new java.util.ArrayList<>(messages);
+                    enriched.add(1, new SystemMessage(memContext));
+                    messages = enriched;
+                }
+            }
+        } catch (Exception ignore) {}
         Prompt prompt = new Prompt(messages, chatOptions);
 
         // 调用实际的流式聊天方法
@@ -331,6 +361,11 @@ public class ChatService {
             }
 
             persistMessages(toolName);
+            try {
+                if (memoryOrchestrator != null) {
+                    memoryOrchestrator.persistAsync(session, message, fullResponse.toString());
+                }
+            } catch (Exception ignore) {}
 
             // 记录处理的句子数量
             logger.debug("总共处理了 {} 个句子", sentenceCount.get());
