@@ -52,6 +52,7 @@ services:
       start_period: 120s
 
   node:
+    image: ghcr.io/augusdin/xiaozhi-esp32-server-java-node:main
     build:
       context: .
       dockerfile: Dockerfile-node
@@ -66,6 +67,7 @@ services:
       - API_URL=http://server:8091
 
   server:
+    image: ghcr.io/augusdin/xiaozhi-esp32-server-java-server:main
     build:
       context: .
       dockerfile: Dockerfile-server

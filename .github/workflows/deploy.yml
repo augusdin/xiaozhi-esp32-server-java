@@ -27,24 +27,47 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Extract metadata
-      id: meta
+    - name: Extract metadata (server)
+      id: meta_server
       uses: docker/metadata-action@v5
       with:
-        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-server
         tags: |
           type=ref,event=branch
           type=ref,event=pr
           type=sha,prefix=sha-
 
-    - name: Build and push Docker image
+    - name: Extract metadata (node)
+      id: meta_node
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-node
+        tags: |
+          type=ref,event=branch
+          type=ref,event=pr
+          type=sha,prefix=sha-
+
+    - name: Build and push Docker image (server)
       uses: docker/build-push-action@v5
       with:
         context: .
         file: ./Dockerfile-server
         push: true
-        tags: ${{ steps.meta.outputs.tags }}
-        labels: ${{ steps.meta.outputs.labels }}
+        tags: ${{ steps.meta_server.outputs.tags }}
+        labels: ${{ steps.meta_server.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+    - name: Build and push Docker image (node)
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./Dockerfile-node
+        push: true
+        tags: ${{ steps.meta_node.outputs.tags }}
+        labels: ${{ steps.meta_node.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
 
     - name: Deploy to remote server
       if: github.ref == 'refs/heads/main'
@@ -69,17 +92,22 @@ jobs:
           
           # Stop existing services
           docker-compose down 2>/dev/null || true
-          
-          # Start core services only (skip FunASR)
-          # 先启动 MySQL，等待健康，再启动 server、node 并跳过依赖
+
+          # Start MySQL and wait for health
           docker-compose up -d mysql
-          # 等待 MySQL 健康（最多90秒）
           timeout 90s bash -c 'until [ "$(docker inspect -f {{.State.Health.Status}} $(docker-compose ps -q mysql))" = "healthy" ]; do sleep 3; done' || true
-          # 构建并启动 server、node，跳过依赖以避免触发 funasr 拉取
-          VOSK_MODEL_SIZE=small docker-compose up -d --build --no-deps server node
-          
-          # Wait for services to be ready
-          sleep 60
+
+          # Try pulling prebuilt images (server/node). If pull fails (e.g. private), fallback to local build.
+          docker-compose pull server node || true
+          VOSK_MODEL_SIZE=small docker-compose up -d --no-build --no-deps server node || VOSK_MODEL_SIZE=small docker-compose up -d --build --no-deps server node
+
+          # Ensure curl exists for readiness probe
+          if ! command -v curl >/dev/null 2>&1; then
+            apt-get update -y && apt-get install -y curl || true
+          fi
+
+          # Wait for server readiness (max 90s)
+          timeout 90s bash -c 'until curl -sf http://localhost:8091/actuator/health >/dev/null; do sleep 3; done' || true
           
           # Show service status
           docker-compose ps
