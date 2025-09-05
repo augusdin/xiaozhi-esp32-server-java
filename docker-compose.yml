@@ -16,40 +16,6 @@ services:
       retries: 5
       start_period: 30s
 
-  funasr:
-    # 使用 GHCR 镜像，避免阿里云镜像跨地域拉取缓慢
-    image: ghcr.io/augusdin/funasr:funasr-runtime-sdk-online-cpu-0.1.12
-    ports:
-      - "10095:10095"
-    networks:
-      - app-network
-    volumes:
-      - funasr_models:/workspace/models
-    command: >
-      bash -c "
-        cd FunASR/runtime &&
-        bash run_server.sh 
-          --download-model-dir /workspace/models 
-          --vad-dir damo/speech_fsmn_vad_zh-cn-16k-common-onnx 
-          --model-dir damo/speech_paraformer-large_asr_nat-zh-cn-16k-common-vocab8404-onnx  
-          --punc-dir damo/punc_ct-transformer_zh-cn-common-vocab471067-large-onnx 
-          --port 10095 
-          --certfile 0
-      "
-    restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          memory: 800M
-        reservations:
-          memory: 400M
-    healthcheck:
-      # 使用 CMD-SHELL 以支持管道符，确保健康检查生效
-      test: ["CMD-SHELL", "netstat -tuln | grep :10095"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 120s
 
   node:
     image: ghcr.io/augusdin/xiaozhi-esp32-server-java-node:main
@@ -75,18 +41,18 @@ services:
     depends_on:
       mysql:
         condition: service_healthy
-      funasr:
-        condition: service_healthy
     ports:
       - "8091:8091"
     networks:
       - app-network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       - SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/xiaozhi?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
       - SPRING_DATASOURCE_USERNAME=xiaozhi
       - SPRING_DATASOURCE_PASSWORD=123456
-      # 配置FunASR服务地址，可以指向外部FunASR服务
-      - FUNASR_API_URL=ws://funasr:10095/
+      # 配置FunASR服务地址，默认指向宿主机的独立 FunASR 服务
+      - FUNASR_API_URL=ws://host.docker.internal:10095/
       # 邮箱配置
       - EMAIL_SMTP_USERNAME=noreply@xiaozhi.com
       - EMAIL_SMTP_PASSWORD=defaultpassword
@@ -112,4 +78,3 @@ networks:
 
 volumes:
   mysql_data:
-  funasr_models:

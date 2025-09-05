@@ -77,6 +77,8 @@ jobs:
         push: true
         tags: ${{ steps.meta_server.outputs.tags }}
         labels: ${{ steps.meta_server.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
         provenance: false
 
     - name: Build and push Docker image (node)
@@ -88,6 +90,8 @@ jobs:
         push: true
         tags: ${{ steps.meta_node.outputs.tags }}
         labels: ${{ steps.meta_node.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
         provenance: false
 
     - name: Deploy to remote server
@@ -120,7 +124,7 @@ jobs:
 
           # Try pulling prebuilt images (server/node). If pull fails (e.g. private), fallback to local build.
           docker-compose pull server node || true
-          VOSK_MODEL_SIZE=small docker-compose up -d --no-build --no-deps server node || VOSK_MODEL_SIZE=small docker-compose up -d --build --no-deps server node
+          docker-compose up -d --no-build --no-deps server node || docker-compose up -d --build --no-deps server node
 
           # Ensure curl exists for readiness probe
           if ! command -v curl >/dev/null 2>&1; then

@@ -1,28 +1,21 @@
 # ================================
 # Stage 1: Maven Dependencies Cache
 # ================================
-FROM eclipse-temurin:21-jdk AS deps-builder
+# syntax=docker/dockerfile:1.6
 
-# 安装Maven
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    maven \
-    && rm -rf /var/lib/apt/lists/*
+FROM maven:3.9.9-eclipse-temurin-21 AS deps-builder
 
 WORKDIR /build
 
 # 先复制pom.xml，利用Docker层缓存优化依赖下载
 COPY pom.xml ./
-RUN mvn dependency:go-offline -B
+# 使用 BuildKit 缓存 Maven 仓库，加速依赖下载
+RUN --mount=type=cache,target=/root/.m2 mvn -B -q dependency:go-offline
 
 # ================================
 # Stage 2: Application Builder  
 # ================================
-FROM eclipse-temurin:21-jdk AS app-builder
-
-# 安装Maven
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    maven \
-    && rm -rf /var/lib/apt/lists/*
+FROM maven:3.9.9-eclipse-temurin-21 AS app-builder
 
 WORKDIR /build
 
@@ -34,8 +27,8 @@ COPY ./src ./src
 COPY ./db ./db
 COPY pom.xml ./
 
-# 构建应用，跳过测试提高速度
-RUN mvn clean package -DskipTests -B -q
+# 构建应用，跳过测试提高速度（使用缓存的 ~/.m2）
+RUN --mount=type=cache,target=/root/.m2 mvn clean package -DskipTests -B -q
 
 # 提取版本号
 RUN APP_VERSION=$(grep -A1 "<artifactId>xiaozhi.server</artifactId>" pom.xml | \

@@ -18,13 +18,17 @@
 
 ## FunASR服务配置
 
-### 选项1：使用现有FunASR服务（推荐）
+### 选项1：使用现有FunASR服务（推荐，容器内连接宿主服务）
 ```yaml
 environment:
-  - FUNASR_API_URL=ws://your-funasr-server:10095/
+  # 在容器中通过 host.docker.internal 访问宿主 FunASR
+  - FUNASR_API_URL=ws://host.docker.internal:10095/
+  # 需在 docker-compose 的 server 服务中添加：
+  # extra_hosts:
+  #   - "host.docker.internal:host-gateway"
 ```
 
-### 选项2：部署本地FunASR服务
+### 选项2：部署本机（宿主）FunASR服务
 ```bash
 # 使用官方Docker镜像部署FunASR
 docker run -d \
@@ -57,10 +61,10 @@ curl http://localhost:8091/actuator/health
 ```
 
 ### 2. 检查STT服务初始化
-查看日志中的以下信息：
+查看日志中的以下信息（如未显式设置，将使用应用内默认 ws://localhost:10095/；在容器中请务必通过环境变量改为 host.docker.internal）：
 ```
 正在初始化默认语音识别服务(FunASR)...
-默认语音识别服务(FunASR)初始化成功，服务地址: ws://localhost:10095/
+默认语音识别服务(FunASR)初始化成功，服务地址: ws://host.docker.internal:10095/
 ```
 
 ### 3. 测试语音识别
