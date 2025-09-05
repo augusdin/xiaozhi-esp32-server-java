@@ -17,11 +17,6 @@ public class MemoryProperties {
     private String mem0Url;
     private int mem0TimeoutMs = 1500;
 
-    private boolean langfuseEnabled = false;
-    private String langfuseHost;
-    private String langfusePublicKey;
-    private String langfuseSecretKey;
-    private int langfuseTimeoutMs = 1500;
 
     public boolean isEnabled() { return enabled; }
     public void setEnabled(boolean enabled) { this.enabled = enabled; }
@@ -42,15 +37,5 @@ public class MemoryProperties {
     public int getMem0TimeoutMs() { return mem0TimeoutMs; }
     public void setMem0TimeoutMs(int mem0TimeoutMs) { this.mem0TimeoutMs = mem0TimeoutMs; }
 
-    public boolean isLangfuseEnabled() { return langfuseEnabled; }
-    public void setLangfuseEnabled(boolean langfuseEnabled) { this.langfuseEnabled = langfuseEnabled; }
-    public String getLangfuseHost() { return langfuseHost; }
-    public void setLangfuseHost(String langfuseHost) { this.langfuseHost = langfuseHost; }
-    public String getLangfusePublicKey() { return langfusePublicKey; }
-    public void setLangfusePublicKey(String langfusePublicKey) { this.langfusePublicKey = langfusePublicKey; }
-    public String getLangfuseSecretKey() { return langfuseSecretKey; }
-    public void setLangfuseSecretKey(String langfuseSecretKey) { this.langfuseSecretKey = langfuseSecretKey; }
-    public int getLangfuseTimeoutMs() { return langfuseTimeoutMs; }
-    public void setLangfuseTimeoutMs(int langfuseTimeoutMs) { this.langfuseTimeoutMs = langfuseTimeoutMs; }
 }
 

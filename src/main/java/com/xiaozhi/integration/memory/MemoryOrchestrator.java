@@ -8,13 +8,10 @@ public class MemoryOrchestrator {
     private final MemoryProperties properties;
     private final MemOSClient memOSClient;
     private final Mem0Client mem0Client;
-    private final LangfuseClient langfuseClient;
-
-    public MemoryOrchestrator(MemoryProperties properties, MemOSClient memOSClient, Mem0Client mem0Client, LangfuseClient langfuseClient) {
+    public MemoryOrchestrator(MemoryProperties properties, MemOSClient memOSClient, Mem0Client mem0Client) {
         this.properties = properties;
         this.memOSClient = memOSClient;
         this.mem0Client = mem0Client;
-        this.langfuseClient = langfuseClient;
     }
 
     public boolean isMemosEnabled() {
@@ -34,7 +31,6 @@ public class MemoryOrchestrator {
             String toStore = buildDialogueText(userText, assistantText);
             mem0Client.addMemoryAsync(userId, toStore);
         }
-        // Langfuse events可以在后续扩展，这里预留入口
     }
 
     private String buildDialogueText(String userText, String assistantText) {
