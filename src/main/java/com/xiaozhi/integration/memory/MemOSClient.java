@@ -17,9 +17,11 @@ public class MemOSClient {
     private final MemoryProperties properties;
     private final OkHttpClient http;
     private final ObjectMapper mapper = new ObjectMapper();
+    private final MemOSConfigManager configManager;
 
-    public MemOSClient(MemoryProperties properties) {
+    public MemOSClient(MemoryProperties properties, MemOSConfigManager configManager) {
         this.properties = properties;
+        this.configManager = configManager;
         this.http = new OkHttpClient.Builder()
                 .connectTimeout(Duration.ofMillis(properties.getMemosTimeoutMs()))
                 .readTimeout(Duration.ofMillis(properties.getMemosTimeoutMs()))
@@ -31,47 +33,181 @@ public class MemOSClient {
     }
 
     public String buildMemoryContext(String userId, String query) {
-        if (!isEnabled()) return null;
+        if (!isEnabled()) {
+            logger.debug("MemOS search disabled");
+            return null;
+        }
+        
         try {
-            String url = properties.getMemosUrl().replaceAll("/$", "") + "/product/search";
+            // 1. 确保用户已配置
+            if (!configManager.ensureUserConfigured(userId)) {
+                logger.warn("Failed to configure MemOS for user: {}", userId);
+                return null;
+            }
+            
+            // 2. 执行搜索
+            return performSearch(userId, query);
+            
+        } catch (Exception e) {
+            logger.warn("MemOS buildMemoryContext error for user {}: {}", userId, e.getMessage());
+            return null;
+        }
+    }
+    
+    /**
+     * 执行 MemOS 搜索
+     */
+    private String performSearch(String userId, String query) {
+        try {
+            String url = properties.getMemosUrl().replaceAll("/$", "") + "/search";
             int topK = Math.max(1, properties.getMemosTopK());
-            String json = String.format("{\"user_id\":\"%s\",\"query\":\"%s\",\"top_k\":%d}",
-                    escape(userId), escape(query), topK);
+            
+            // 构建正确的搜索请求
+            String json = String.format("""
+                {
+                  "query": "%s",
+                  "user_id": "%s",
+                  "install_cube_ids": ["%s_cube"],
+                  "top_k": %d
+                }
+                """, escape(query), escape(userId), escape(userId), topK);
+                    
             Request request = new Request.Builder()
                     .url(url)
                     .post(RequestBody.create(json, MediaType.parse("application/json")))
                     .build();
+                    
             try (Response resp = http.newCall(request).execute()) {
                 if (!resp.isSuccessful() || resp.body() == null) {
-                    logger.warn("MemOS search failed: status={}", resp.code());
+                    logger.warn("MemOS search failed for user {}: status={}", userId, resp.code());
                     return null;
                 }
-                JsonNode root = mapper.readTree(resp.body().string());
-                JsonNode data = root.get("data");
-                if (data == null) return null;
-                List<String> items = new ArrayList<>();
-                // Prefer textual memories if present
-                if (data.has("text_mem")) {
-                    for (JsonNode n : data.get("text_mem")) {
-                        if (n.isTextual()) items.add(n.asText());
-                        else if (n.has("content")) items.add(n.get("content").asText(""));
+                
+                return parseSearchResponse(resp.body().string());
+            }
+            
+        } catch (Exception e) {
+            logger.warn("MemOS search error for user {}: {}", userId, e.getMessage());
+            return null;
+        }
+    }
+    
+    /**
+     * 解析搜索响应
+     */
+    private String parseSearchResponse(String responseBody) {
+        try {
+            JsonNode root = mapper.readTree(responseBody);
+            JsonNode data = root.get("data");
+            if (data == null) {
+                return null;
+            }
+            
+            List<String> memories = new ArrayList<>();
+            
+            // 处理文本记忆
+            if (data.has("text_mem") && data.get("text_mem").isArray()) {
+                for (JsonNode memNode : data.get("text_mem")) {
+                    String content = extractMemoryContent(memNode);
+                    if (content != null && !content.isBlank()) {
+                        memories.add(content);
                     }
                 }
-                // Fallback to generic list
-                if (items.isEmpty() && data.isArray()) {
-                    for (JsonNode n : data) items.add(n.asText(""));
-                }
-                if (items.isEmpty()) return null;
-                StringBuilder sb = new StringBuilder("User Memories:\n");
-                for (String it : items) {
-                    if (it == null || it.isBlank()) continue;
-                    sb.append("- ").append(it.replaceAll("\n", " ")).append("\n");
-                }
-                return sb.toString();
             }
+            
+            // 如果没有找到记忆，返回 null
+            if (memories.isEmpty()) {
+                return null;
+            }
+            
+            // 构建记忆上下文
+            StringBuilder context = new StringBuilder("Relevant User Memories:\n");
+            for (int i = 0; i < memories.size(); i++) {
+                context.append(String.format("%d. %s\n", i + 1, memories.get(i).trim()));
+            }
+            
+            return context.toString();
+            
         } catch (Exception e) {
-            logger.warn("MemOS search error: {}", e.toString());
+            logger.warn("Failed to parse MemOS search response: {}", e.getMessage());
             return null;
+        }
+    }
+    
+    /**
+     * 从记忆节点中提取内容
+     */
+    private String extractMemoryContent(JsonNode memNode) {
+        // 尝试多种可能的字段名
+        String[] contentFields = {"content", "text", "memory", "description"};
+        
+        for (String field : contentFields) {
+            if (memNode.has(field)) {
+                String content = memNode.get(field).asText();
+                if (!content.isBlank()) {
+                    return content;
+                }
+            }
+        }
+        
+        // 如果是字符串节点，直接返回
+        if (memNode.isTextual()) {
+            return memNode.asText();
+        }
+        
+        return null;
+    }
+    
+    /**
+     * 异步存储记忆到 MemOS
+     */
+    public void addMemoryAsync(String userId, String content) {
+        if (!isEnabled()) {
+            logger.debug("MemOS storage disabled");
+            return;
+        }
+        
+        Thread.startVirtualThread(() -> addMemory(userId, content));
+    }
+    
+    /**
+     * 存储记忆到 MemOS
+     */
+    public void addMemory(String userId, String content) {
+        try {
+            // 1. 确保用户已配置
+            if (!configManager.ensureUserConfigured(userId)) {
+                logger.warn("Failed to configure MemOS for user: {}", userId);
+                return;
+            }
+            
+            // 2. 存储记忆
+            String url = properties.getMemosUrl().replaceAll("/$", "") + "/memories";
+            
+            String json = String.format("""
+                {
+                  "user_id": "%s",
+                  "cube_id": "%s_cube",
+                  "content": "%s",
+                  "type": "textual"
+                }
+                """, escape(userId), escape(userId), escape(content));
+            
+            Request request = new Request.Builder()
+                    .url(url)
+                    .post(RequestBody.create(json, MediaType.parse("application/json")))
+                    .build();
+                    
+            try (Response resp = http.newCall(request).execute()) {
+                if (resp.isSuccessful()) {
+                    logger.debug("MemOS memory stored successfully for user: {}", userId);
+                } else {
+                    logger.warn("MemOS memory storage failed for user {}: status={}", userId, resp.code());
+                }
+            }
+            
+        } catch (Exception e) {
+            logger.warn("MemOS addMemory error for user {}: {}", userId, e.getMessage());
         }
     }
 

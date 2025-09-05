@@ -27,9 +27,19 @@ public class MemoryOrchestrator {
     public void persistAsync(ChatSession session, String userText, String assistantText) {
         if (!properties.isEnabled() || session == null || session.getSysDevice() == null) return;
         String userId = session.getSysDevice().getDeviceId();
-        if (properties.isMem0Enabled() && assistantText != null && !assistantText.isBlank()) {
+        
+        if (assistantText != null && !assistantText.isBlank()) {
             String toStore = buildDialogueText(userText, assistantText);
-            mem0Client.addMemoryAsync(userId, toStore);
+            
+            // 存储到 Mem0 (轻量级记忆存储)
+            if (properties.isMem0Enabled()) {
+                mem0Client.addMemoryAsync(userId, toStore);
+            }
+            
+            // 存储到 MemOS (结构化记忆存储)
+            if (properties.isMemosEnabled()) {
+                memOSClient.addMemoryAsync(userId, toStore);
+            }
         }
     }
 
