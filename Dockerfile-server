@@ -1,8 +1,7 @@
+# syntax=docker/dockerfile:1.6
 # ================================
 # Stage 1: Maven Dependencies Cache
 # ================================
-# syntax=docker/dockerfile:1.6
-
 FROM maven:3.9.9-eclipse-temurin-21 AS deps-builder
 
 WORKDIR /build
@@ -19,8 +18,7 @@ FROM maven:3.9.9-eclipse-temurin-21 AS app-builder
 
 WORKDIR /build
 
-# 复制缓存的依赖
-COPY --from=deps-builder /root/.m2 /root/.m2
+# 使用 BuildKit 缓存加速依赖，无需从上一阶段复制 ~/.m2（cache 挂载不提交到镜像层）
 
 # 复制源代码并构建
 COPY ./src ./src
