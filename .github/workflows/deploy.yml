@@ -8,6 +8,7 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
+  PUBLISH_IMAGES: "false"
 
 jobs:
   build-and-deploy:
@@ -22,6 +23,7 @@ jobs:
       uses: actions/checkout@v4
 
     - name: Log in to Container Registry
+      if: env.PUBLISH_IMAGES == 'true'
       uses: docker/login-action@v3
       with:
         registry: ${{ env.REGISTRY }}
@@ -29,7 +31,7 @@ jobs:
         password: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Optional GHCR PAT login (override actor login if provided)
-      if: secrets.GHCR_PAT != ''
+      if: env.PUBLISH_IMAGES == 'true' && secrets.GHCR_PAT != ''
       uses: docker/login-action@v3
       with:
         registry: ${{ env.REGISTRY }}
@@ -37,6 +39,7 @@ jobs:
         password: ${{ secrets.GHCR_PAT }}
 
     - name: Extract metadata (server)
+      if: env.PUBLISH_IMAGES == 'true'
       id: meta_server
       uses: docker/metadata-action@v5
       with:
@@ -47,6 +50,7 @@ jobs:
           type=sha,prefix=sha-
 
     - name: Extract metadata (node)
+      if: env.PUBLISH_IMAGES == 'true'
       id: meta_node
       uses: docker/metadata-action@v5
       with:
@@ -57,6 +61,7 @@ jobs:
           type=sha,prefix=sha-
 
     - name: Build and push Docker image (server)
+      if: env.PUBLISH_IMAGES == 'true'
       uses: docker/build-push-action@v5
       with:
         context: .
@@ -68,6 +73,7 @@ jobs:
         cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-server:buildcache,mode=max
 
     - name: Build and push Docker image (node)
+      if: env.PUBLISH_IMAGES == 'true'
       uses: docker/build-push-action@v5
       with:
         context: .
