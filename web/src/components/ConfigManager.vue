@@ -190,6 +190,23 @@
                     <a-button style="margin-left: 8px" @click="resetForm">
                       取消
                     </a-button>
+                    <!-- 测试连接按钮，仅在LLM配置时显示 -->
+                    <a-button v-if="configType === 'llm'" 
+                              type="primary" 
+                              style="margin-left: 8px; background-color: #52c41a; border-color: #52c41a"
+                              :loading="testLoading" 
+                              @click="testModelConnection">
+                      测试
+                    </a-button>
+                    <!-- 测试结果显示 -->
+                    <span v-if="testStatus && configType === 'llm'" style="margin-left: 12px">
+                      <span v-if="testStatus === 'success'" style="color: #52c41a; font-weight: 500">
+                        ✓ 服务连接正常
+                      </span>
+                      <span v-if="testStatus === 'error'" style="color: #f5222d; font-weight: 500">
+                        ✗ 服务连接失败
+                      </span>
+                    </span>
                   </a-form-item>
                 </a-space>
               </a-form>
@@ -238,6 +255,11 @@ export default {
       editingConfigId: null,
       currentType: '',
       loading: false,
+      
+      // 测试连接相关状态
+      testLoading: false,    // 测试按钮加载状态
+      testStatus: '',        // 测试状态: 'success', 'error', ''
+      testMessage: '',       // 测试结果消息
 
       modelOptions: [], // 存储模型下拉框选项
 
@@ -677,12 +699,114 @@ export default {
         })
     },
 
+    // 测试模型连接
+    async testModelConnection() {
+      this.testLoading = true;
+      this.testStatus = '';
+      this.testMessage = '';
+      
+      try {
+        // 获取表单值
+        const formValues = this.configForm.getFieldsValue();
+        
+        // 表单验证
+        if (!formValues.apiKey || !formValues.apiUrl) {
+          this.testStatus = 'error';
+          this.testMessage = 'API密钥或API地址未填写';
+          console.error('测试失败: API密钥或API地址未填写', {
+            apiKey: formValues.apiKey ? '已填写' : '未填写',
+            apiUrl: formValues.apiUrl ? '已填写' : '未填写',
+            formValues: formValues
+          });
+          this.$message.error('请先填写API密钥和API地址');
+          return;
+        }
+        
+        console.log('开始测试模型连接...', {
+          provider: formValues.provider,
+          apiUrl: formValues.apiUrl,
+          apiKey: formValues.apiKey ? `${formValues.apiKey.substring(0, 10)}...` : '未设置'
+        });
+        
+        // 调用测试接口
+        const res = await axios.post({
+          url: api.config.testConnection,
+          data: formValues
+        });
+        
+        if (res.code === 200) {
+          this.testStatus = 'success';
+          this.testMessage = res.message || '连接成功';
+          console.log('模型连接测试成功:', {
+            message: res.message,
+            data: res.data
+          });
+          this.$message.success('连接测试成功');
+        } else {
+          this.testStatus = 'error';
+          this.testMessage = res.message || '连接失败';
+          console.error('模型连接测试失败:', {
+            code: res.code,
+            message: res.message,
+            data: res.data
+          });
+          this.$message.error(`连接测试失败: ${res.message}`);
+        }
+        
+      } catch (error) {
+        this.testStatus = 'error';
+        this.testMessage = error.message || '连接测试异常';
+        
+        // 详细错误信息输出到控制台
+        console.error('模型连接测试异常:', {
+          message: error.message,
+          response: error.response,
+          responseData: error.response?.data,
+          status: error.response?.status,
+          statusText: error.response?.statusText,
+          config: error.config,
+          stack: error.stack,
+          fullError: error
+        });
+        
+        // 根据错误类型给出更友好的提示
+        let errorMessage = '连接测试失败';
+        if (error.response) {
+          const status = error.response.status;
+          const responseData = error.response.data;
+          
+          if (status === 401) {
+            errorMessage = 'API密钥无效';
+          } else if (status === 403) {
+            errorMessage = 'API密钥权限不足';
+          } else if (status === 404) {
+            errorMessage = 'API地址不正确';
+          } else if (responseData && responseData.message) {
+            errorMessage = responseData.message;
+          } else {
+            errorMessage = `HTTP ${status} 错误`;
+          }
+        } else if (error.code === 'NETWORK_ERROR') {
+          errorMessage = '网络连接错误';
+        }
+        
+        this.$message.error(errorMessage);
+        
+      } finally {
+        this.testLoading = false;
+      }
+    },
+
     // 重置表单
     resetForm() {
       this.configForm.resetFields()
       this.currentType = ''
       this.modelOptions = []
       this.editingConfigId = null
+      // 重置测试状态
+      this.testStatus = ''
+      this.testLoading = false
+      this.testMessage = ''
     }
   }
 }

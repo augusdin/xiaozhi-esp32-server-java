@@ -177,4 +177,63 @@ public class ConfigController extends BaseController {
             return AjaxResult.error();
         }
     }
+
+    @PostMapping("/testConnection")
+    @ResponseBody
+    @Operation(summary = "测试模型连接", description = "测试API连接是否正常")
+    public AjaxResult testConnection(SysConfig config) {
+        try {
+            RestTemplate restTemplate = new RestTemplate();
+            // 设置请求头
+            HttpHeaders headers = new HttpHeaders();
+            headers.set("Authorization", "Bearer " + config.getApiKey());
+            headers.set("Content-Type", "application/json");
+
+            // 构建请求实体
+            HttpEntity<String> entity = new HttpEntity<>(headers);
+
+            // 首先尝试获取模型列表进行连接测试
+            ResponseEntity<String> response = restTemplate.exchange(
+                    config.getApiUrl() + "/models",
+                    HttpMethod.GET,
+                    entity,
+                    String.class);
+
+            // 检查响应状态
+            if (response.getStatusCode().is2xxSuccessful()) {
+                // 进一步验证响应内容是否符合预期格式
+                ObjectMapper objectMapper = new ObjectMapper();
+                JsonNode rootNode = objectMapper.readTree(response.getBody());
+                
+                if (rootNode.has("data") && rootNode.get("data").isArray()) {
+                    return AjaxResult.success("服务连接正常，API密钥有效");
+                } else {
+                    return AjaxResult.success("服务连接正常，但响应格式异常");
+                }
+            } else {
+                return AjaxResult.error("服务连接失败，HTTP状态码: " + response.getStatusCode().value());
+            }
+
+        } catch (HttpClientErrorException e) {
+            // 捕获 HTTP 客户端异常并返回详细错误信息
+            String errorMessage = e.getResponseBodyAsString();
+            String statusCode = String.valueOf(e.getStatusCode().value());
+            
+            // 根据状态码返回更具体的错误信息
+            if (e.getStatusCode().value() == 401) {
+                return AjaxResult.error("API密钥无效 (401): " + errorMessage);
+            } else if (e.getStatusCode().value() == 403) {
+                return AjaxResult.error("API密钥权限不足 (403): " + errorMessage);
+            } else if (e.getStatusCode().value() == 404) {
+                return AjaxResult.error("API地址不正确 (404): " + errorMessage);
+            } else {
+                return AjaxResult.error("服务连接失败 (" + statusCode + "): " + errorMessage);
+            }
+
+        } catch (Exception e) {
+            // 捕获其他异常并记录日志
+            logger.error("测试连接时发生异常", e);
+            return AjaxResult.error("连接测试异常: " + e.getMessage());
+        }
+    }
 }

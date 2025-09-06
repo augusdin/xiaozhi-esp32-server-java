@@ -43,7 +43,8 @@ export default {
     add: "/api/config/add",
     query: "/api/config/query",
     update: "/api/config/update",
-    getModels: "/api/config/getModels"
+    getModels: "/api/config/getModels",
+    testConnection: "/api/config/testConnection"
   },
   upload: "/api/file/upload"
 };

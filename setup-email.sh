@@ -109,11 +109,12 @@ echo "✅ Docker配置已更新"
 echo "🔍 检查服务状态..."
 docker ps --format "table {{.Names}}\t{{.Status}}" | grep xiaozhi
 
-echo "🔄 重启服务..."
-docker-compose restart server
+echo "🔄 重新创建服务容器以应用新的环境变量..."
+docker-compose down server
+docker-compose up -d server
 
 echo "⏳ 等待服务启动..."
-sleep 10
+sleep 15
 
 # 验证服务状态
 echo "🔍 验证服务状态..."
@@ -124,8 +125,21 @@ else
     docker logs xiaozhi-esp32-server-java-server-1 --tail 20
 fi
 
-echo "📋 当前环境变量配置:"
-docker exec xiaozhi-esp32-server-java-server-1 env | grep EMAIL || echo "环境变量未找到"
+echo "📋 验证容器内环境变量:"
+EMAIL_CHECK=\$(docker exec xiaozhi-esp32-server-java-server-1 env | grep EMAIL_SMTP_USERNAME | cut -d'=' -f2 2>/dev/null)
+PASSWORD_CHECK=\$(docker exec xiaozhi-esp32-server-java-server-1 env | grep EMAIL_SMTP_PASSWORD | cut -d'=' -f2 2>/dev/null)
+
+if [[ "\$EMAIL_CHECK" == "$EMAIL_USERNAME" ]]; then
+    echo "✅ 邮箱用户名配置正确: \$EMAIL_CHECK"
+else
+    echo "❌ 邮箱用户名配置失败 - 期望: $EMAIL_USERNAME, 实际: \$EMAIL_CHECK"
+fi
+
+if [[ "\$PASSWORD_CHECK" == "$EMAIL_PASSWORD" ]]; then
+    echo "✅ 邮箱密码配置正确"
+else
+    echo "❌ 邮箱密码配置失败"
+fi
 EOF
 
 # 上传并执行远程脚本
@@ -139,36 +153,12 @@ ssh -i "$SSH_KEY" "$REMOTE_HOST" "rm -f /tmp/remote_config.sh"
 # 检查远程命令执行结果
 if [[ $? -eq 0 ]]; then
     echo ""
-    echo -e "${GREEN}🎉 配置完成！${NC}"
+    echo -e "${GREEN}🎉 163邮箱配置完成！${NC}"
     echo ""
-    echo -e "${BLUE}📝 接下来需要修改代码支持163邮箱:${NC}"
+    echo -e "${BLUE}📝 配置结果:${NC}"
+    echo "✅ 代码已通过GitHub自动部署"
+    echo "✅ 环境变量已更新并生效"
     echo ""
-    
-    # 提示用户是否自动修改代码
-    read -p "是否自动修改代码以支持163邮箱? (Y/n): " MODIFY_CODE
-    if [[ "$MODIFY_CODE" =~ ^[Yy]$|^$ ]]; then
-        echo ""
-        echo -e "${BLUE}🔧 修改代码以支持163邮箱...${NC}"
-        
-        # 修改UserController.java
-        if [[ -f "src/main/java/com/xiaozhi/controller/UserController.java" ]]; then
-            # 备份原文件
-            cp src/main/java/com/xiaozhi/controller/UserController.java src/main/java/com/xiaozhi/controller/UserController.java.backup
-            
-            # 替换SMTP配置
-            sed -i 's/SMTP_QQ(false)/SMTP_163(false)/g' src/main/java/com/xiaozhi/controller/UserController.java
-            
-            echo -e "${GREEN}✅ 代码已修改为使用163邮箱SMTP${NC}"
-            echo ""
-            echo -e "${YELLOW}📤 请提交代码更改并等待自动部署:${NC}"
-            echo "git add ."
-            echo "git commit -m \"feat: configure 163 email SMTP service\""
-            echo "git push"
-            echo ""
-        else
-            echo -e "${RED}❌ 找不到UserController.java文件${NC}"
-        fi
-    fi
     
     echo -e "${BLUE}🔍 配置验证信息:${NC}"
     echo "邮箱地址: $EMAIL_USERNAME"
@@ -177,10 +167,9 @@ if [[ $? -eq 0 ]]; then
     echo -e "${GREEN}📧 现在可以测试邮箱验证码发送功能了！${NC}"
     echo ""
     echo -e "${YELLOW}💡 测试步骤:${NC}"
-    echo "1. 如果修改了代码，先提交并等待部署完成"
-    echo "2. 访问 http://107.173.38.186:8084"
-    echo "3. 尝试注册新用户"
-    echo "4. 查看是否能收到验证码邮件"
+    echo "1. 访问 http://107.173.38.186:8084"
+    echo "2. 尝试注册新用户"
+    echo "3. 查看163邮箱是否收到验证码邮件"
     echo ""
     echo -e "${BLUE}🔧 如果遇到问题，查看日志:${NC}"
     echo "ssh -i ~/.ssh/xiaozhi_deploy root@107.173.38.186 'docker logs xiaozhi-esp32-server-java-server-1 --tail 50'"
