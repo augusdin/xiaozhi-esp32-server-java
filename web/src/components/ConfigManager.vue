@@ -761,9 +761,9 @@ export default {
         console.error('模型连接测试异常:', {
           message: error.message,
           response: error.response,
-          responseData: error.response?.data,
-          status: error.response?.status,
-          statusText: error.response?.statusText,
+          responseData: error.response && error.response.data,
+          status: error.response && error.response.status,
+          statusText: error.response && error.response.statusText,
           config: error.config,
           stack: error.stack,
           fullError: error
