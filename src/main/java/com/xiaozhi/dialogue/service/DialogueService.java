@@ -91,8 +91,7 @@ public class DialogueService implements ApplicationListener<ChatSessionCloseEven
     @Resource
     private SysRoleService roleService;
 
-    @Resource
-    private com.xiaozhi.integration.langfuse.LangfuseService langfuseService;
+    // LLM 追踪现在由 Spring AI + OpenTelemetry 自动处理
 
     // 会话状态管理
     private final Map<String, AtomicInteger> seqCounters = new ConcurrentHashMap<>();
@@ -356,11 +355,7 @@ public class DialogueService implements ApplicationListener<ChatSessionCloseEven
             byte[] initialAudio) {
         Assert.notNull(session, "session不能为空");
         
-        // 创建 STT 追踪 Span
-        langfuseService.createSpan(sessionId, "stt-processing", 
-            Map.of("sttProvider", sttConfig != null ? sttConfig.getProvider() : "default",
-                   "deviceId", device.getDeviceId(),
-                   "audioSize", initialAudio != null ? initialAudio.length : 0), null);
+        // STT 追踪由 Spring AI + OpenTelemetry 自动处理
         
         Thread.startVirtualThread(() -> {
             long sttStartTime = System.currentTimeMillis();
@@ -398,24 +393,15 @@ public class DialogueService implements ApplicationListener<ChatSessionCloseEven
                 if (sessionManager.getAudioStream(sessionId) != null) {
                     finalText = sttService.streamRecognition(sessionManager.getAudioStream(sessionId));
                     if (!StringUtils.hasText(finalText)) {
-                        // STT 失败 - 记录追踪
-                        long sttDuration = System.currentTimeMillis() - sttStartTime;
-                        langfuseService.endSpan(sessionId, null, "empty_result", 
-                            Map.of("duration_ms", sttDuration, "success", false, "error", "空识别结果"));
+                        // STT 失败，OpenTelemetry 自动记录
                         return;
                     }
                 } else {
-                    // STT 失败 - 记录追踪
-                    long sttDuration = System.currentTimeMillis() - sttStartTime;
-                    langfuseService.endSpan(sessionId, null, "no_audio_stream", 
-                        Map.of("duration_ms", sttDuration, "success", false, "error", "无音频流"));
+                    // STT 失败，OpenTelemetry 自动记录
                     return;
                 }
                 
-                // STT 成功 - 记录追踪
-                long sttDuration = System.currentTimeMillis() - sttStartTime;
-                langfuseService.endSpan(sessionId, null, finalText, 
-                    Map.of("duration_ms", sttDuration, "success", true, "textLength", finalText.length()));
+                // STT 成功，OpenTelemetry 自动记录
                 
                 // 获取完整的音频数据并保存
                 saveUserAudio(session);
@@ -590,15 +576,7 @@ public class DialogueService implements ApplicationListener<ChatSessionCloseEven
             SysConfig ttsConfig,
             String voiceName) {
 
-        // 创建 TTS 追踪 Span
-        String spanName = isFirst ? "tts-first-sentence" : (isLast ? "tts-last-sentence" : "tts-sentence");
-        langfuseService.createSpan(sessionId, spanName, 
-            Map.of("text", sentence.getText(),
-                   "sequence", sentence.getSeq(),
-                   "ttsProvider", ttsConfig != null ? ttsConfig.getProvider() : "default",
-                   "voiceName", voiceName != null ? voiceName : "default",
-                   "isFirst", isFirst,
-                   "isLast", isLast), null);
+        // TTS 追踪由 Spring AI + OpenTelemetry 自动处理
 
         // 创建TTS任务
         TtsTask task = new TtsTask(session, sessionId, sentence, emoSentence,
@@ -706,13 +684,7 @@ public class DialogueService implements ApplicationListener<ChatSessionCloseEven
         // 耗时操作需及时更新最后活动时间，避免误判为会话终止
         sessionManager.updateLastActivity(task.getSessionId());
         
-        // TTS 成功 - 记录追踪
-        langfuseService.endSpan(task.getSessionId(), null, audioPath, 
-            Map.of("duration_ms", task.sentence.getTtsGenerationTime() * 1000,
-                   "success", true,
-                   "audioPath", audioPath != null ? audioPath : "null",
-                   "sequence", task.sentence.getSeq(),
-                   "moods", task.emoSentence.getMoods()));
+        // TTS 成功，追踪由 OpenTelemetry 自动处理
         
         // 记录日志
         logger.info("句子音频生成完成 - 序号: {}, 对话ID: {}, 模型响应: {}秒, 语音生成: {}秒, 内容: \"{}\"",
@@ -757,14 +729,9 @@ public class DialogueService implements ApplicationListener<ChatSessionCloseEven
         // 异常或失败，发送类似心跳包，避免设备端误判为会话终止
         messageService.sendEmotion(task.session, "happy");
         
-        // TTS 失败 - 记录追踪（仅在达到最大重试次数时）
+        // TTS 失败，追踪由 OpenTelemetry 自动处理
         if (task.retryCount > MAX_RETRY_COUNT) {
-            langfuseService.endSpan(task.getSessionId(), null, "tts_failed", 
-                Map.of("success", false,
-                       "error", reason,
-                       "retryCount", task.retryCount,
-                       "sequence", task.sentence.getSeq(),
-                       "text", task.sentence.getText()));
+            // 达到最大重试次数，停止重试
         }
 
         if (task.retryCount <= MAX_RETRY_COUNT) {
@@ -979,17 +946,7 @@ public class DialogueService implements ApplicationListener<ChatSessionCloseEven
         String sessionId = session.getSessionId();
         String deviceId = session.getSysDevice() != null ? session.getSysDevice().getDeviceId() : "unknown";
         
-        // 开始文本处理追踪
-        langfuseService.startTrace(session, deviceId, 
-            Map.of("method", "handleText", "inputType", "text")).thenAccept(traceId -> {
-                if (traceId != null) {
-                    logger.debug("开始文本处理追踪: sessionId={}, traceId={}", sessionId, traceId);
-                }
-            });
-        
-        // 创建文本处理 Span
-        langfuseService.createSpan(sessionId, "text-input-processing", 
-            Map.of("inputText", inputText, "hasTextConsumer", textConsumer != null), null);
+        // 文本处理追踪由 Spring AI + OpenTelemetry 自动处理
         
         initChat(sessionId);
         Thread.startVirtualThread(() -> {

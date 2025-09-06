@@ -20,7 +20,6 @@ import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -73,8 +72,7 @@ public class ChatService {
     @Resource
     private com.xiaozhi.integration.memory.MemoryOrchestrator memoryOrchestrator;
 
-    @Resource
-    private com.xiaozhi.integration.langfuse.LangfuseService langfuseService;
+    // LLM 追踪现在由 Spring AI + OpenTelemetry 自动处理
 
     /**
      * 处理用户查询（同步方式）
@@ -85,26 +83,7 @@ public class ChatService {
      * @return 模型回复
      */
     public String chat(ChatSession session, String message, boolean useFunctionCall) {
-        String sessionId = session.getSessionId();
-        String deviceId = session.getSysDevice() != null ? session.getSysDevice().getDeviceId() : "unknown";
-        
-        // 开始 Langfuse 追踪
-        try {
-            Map<String, Object> traceMetadata = Map.of(
-                "method", "chat",
-                "useFunctionCall", useFunctionCall,
-                "deviceId", deviceId
-            );
-            String traceId = langfuseService.startTrace(session, deviceId, traceMetadata).get();
-            if (traceId != null) {
-                logger.debug("开始 Langfuse 追踪: sessionId={}, traceId={}", sessionId, traceId);
-            }
-        } catch (Exception e) {
-            logger.warn("创建 Langfuse 追踪失败: {}", e.getMessage());
-        }
-        
-        // 创建聊天处理 Span
-        langfuseService.createSpan(sessionId, "chat-processing", Map.of("message", message), null);
+        // LLM 追踪由 Spring AI + OpenTelemetry 自动处理
         
         try {
 
@@ -131,38 +110,21 @@ public class ChatService {
             } catch (Exception ignore) {}
             Prompt prompt = new Prompt(messages,chatOptions);
 
-            // 记录 LLM 调用开始时间
-            long llmStartTime = System.currentTimeMillis();
-            
             ChatResponse chatResponse = chatModel.call(prompt);
             
-            // 计算 LLM 调用时间
-            long llmDuration = System.currentTimeMillis() - llmStartTime;
+            // LLM 调用和时间由 Spring AI + OpenTelemetry 自动记录
             
             if (chatResponse == null || chatResponse.getResult().getOutput().getText() == null) {
                 logger.warn("模型响应为空或无生成内容");
                 
-                // 记录失败的生成
-                langfuseService.recordGeneration(sessionId, getModelName(chatModel), 
-                    convertMessagesToLangfuseFormat(messages), null, null, 
-                    Map.of("error", "空响应", "duration_ms", llmDuration));
-                
-                langfuseService.endTrace(sessionId, "error", Map.of("error", "空响应"));
+                // LLM调用失败（空响应），Spring AI会自动记录
                 return "抱歉，我在处理您的请求时遇到了问题。请稍后再试。";
             }
             AssistantMessage assistantMessage =chatResponse.getResult().getOutput();
 
-            // 记录成功的 LLM 生成
-            Map<String, Object> usage = extractUsageInfo(chatResponse);
-            Map<String, Object> generationMetadata = Map.of(
-                "duration_ms", llmDuration,
-                "useFunctionCall", useFunctionCall,
-                "messagesCount", messages.size()
-            );
+            // LLM成功生成，使用信息由 Spring AI + OpenTelemetry 自动记录
             
-            langfuseService.recordGeneration(sessionId, getModelName(chatModel), 
-                convertMessagesToLangfuseFormat(messages), assistantMessage.getText(), 
-                usage, generationMetadata);
+            // LLM生成记录由 Spring AI + OpenTelemetry 自动处理
 
             Thread.startVirtualThread(() -> {// 异步持久化
                 // 保存AI消息，会被持久化至数据库。
@@ -173,18 +135,14 @@ public class ChatService {
                     }
                 } catch (Exception ignore) {}
                 
-                // 结束追踪
-                langfuseService.endTrace(sessionId, assistantMessage.getText(), 
-                    Map.of("success", true, "responseLength", assistantMessage.getText().length()));
+                // 追踪结束由 Spring AI + OpenTelemetry 自动处理
             });
             return assistantMessage.getText();
 
         } catch (Exception e) {
             logger.error("处理查询时出错: {}", e.getMessage(), e);
             
-            // 记录错误到 Langfuse
-            langfuseService.endTrace(sessionId, "error", 
-                Map.of("error", e.getMessage(), "success", false));
+            // 错误追踪由 Spring AI + OpenTelemetry 自动处理
                 
             return "抱歉，我在处理您的请求时遇到了问题。请稍后再试。";
         }
@@ -275,35 +233,13 @@ public class ChatService {
 
     public void chatStreamBySentence(ChatSession session, String message, boolean useFunctionCall,
             TriConsumer<String, Boolean, Boolean> sentenceHandler) {
-        String sessionId = session.getSessionId();
-        String deviceId = session.getSysDevice() != null ? session.getSysDevice().getDeviceId() : "unknown";
-        
-        // 开始 Langfuse 追踪（流式）
-        try {
-            Map<String, Object> traceMetadata = Map.of(
-                "method", "chatStreamBySentence",
-                "useFunctionCall", useFunctionCall,
-                "deviceId", deviceId
-            );
-            langfuseService.startTrace(session, deviceId, traceMetadata).thenAccept(traceId -> {
-                if (traceId != null) {
-                    logger.debug("开始流式 Langfuse 追踪: sessionId={}, traceId={}", sessionId, traceId);
-                }
-            });
-        } catch (Exception e) {
-            logger.warn("创建流式 Langfuse 追踪失败: {}", e.getMessage());
-        }
-        
-        // 创建流式聊天处理 Span
-        langfuseService.createSpan(sessionId, "stream-chat-processing", 
-            Map.of("message", message, "streamType", "sentence"), null);
+        // 流式追踪由 Spring AI + OpenTelemetry 自动处理
         
         try {
             // 创建流式响应监听器
             StreamResponseListener streamListener = new TokenStreamResponseListener(session, message, sentenceHandler);
             final StringBuilder toolName = new StringBuilder(); // 当前句子的缓冲区
             final StringBuilder fullResponse = new StringBuilder(); // 完整响应
-            final long streamStartTime = System.currentTimeMillis(); // 流式开始时间
             
             // 调用现有的流式方法
             chatStream(session, message, useFunctionCall)
@@ -331,38 +267,18 @@ public class ChatService {
                                 }
                             },
                             error -> {
-                                // 记录流式错误到 Langfuse
-                                long streamDuration = System.currentTimeMillis() - streamStartTime;
-                                langfuseService.endTrace(sessionId, "stream_error", 
-                                    Map.of("error", error.getMessage(), "success", false, 
-                                           "duration_ms", streamDuration));
+                                // 流式错误追踪由 Spring AI + OpenTelemetry 自动处理
                                 streamListener.onError(error);
                             },
                             () -> {
-                                // 记录流式成功完成到 Langfuse
-                                long streamDuration = System.currentTimeMillis() - streamStartTime;
-                                String response = fullResponse.toString();
-                                
-                                // 记录 LLM 生成（流式版本）
-                                langfuseService.recordGeneration(sessionId, "stream-llm", 
-                                    List.of(Map.of("role", "user", "content", message)), 
-                                    response, Map.of(), 
-                                    Map.of("duration_ms", streamDuration, "toolName", toolName.toString(),
-                                           "responseLength", response.length(), "streamType", "sentence"));
-                                
-                                // 结束追踪
-                                langfuseService.endTrace(sessionId, response, 
-                                    Map.of("success", true, "streamType", "sentence", 
-                                           "duration_ms", streamDuration, "responseLength", response.length()));
+                                // 流式完成追踪由 Spring AI + OpenTelemetry 自动处理
                                 
                                 streamListener.onComplete(toolName.toString());
                             });
         } catch (Exception e) {
             logger.error("处理LLM时出错: {}", e.getMessage(), e);
             
-            // 记录异常到 Langfuse
-            langfuseService.endTrace(sessionId, "processing_error", 
-                Map.of("error", e.getMessage(), "success", false));
+            // 异常追踪由 Spring AI + OpenTelemetry 自动处理
                 
             // 发送错误信号
             sentenceHandler.accept("抱歉，我在处理您的请求时遇到了问题。", true, true);
@@ -559,87 +475,6 @@ public class ChatService {
         }
     };
 
-    // ====== Langfuse 集成辅助方法 ======
-
-    /**
-     * 获取模型名称
-     */
-    private String getModelName(ChatModel chatModel) {
-        try {
-            String className = chatModel.getClass().getSimpleName();
-            if (className.contains("OpenAi")) {
-                return "openai";
-            } else if (className.contains("Ollama")) {
-                return "ollama";
-            } else if (className.contains("ZhiPu")) {
-                return "zhipu";
-            } else if (className.contains("Coze")) {
-                return "coze";
-            } else if (className.contains("Dify")) {
-                return "dify";
-            } else {
-                return className.toLowerCase();
-            }
-        } catch (Exception e) {
-            return "unknown";
-        }
-    }
-
-    /**
-     * 将 Spring AI 消息转换为 Langfuse 格式
-     */
-    private List<Map<String, Object>> convertMessagesToLangfuseFormat(List<Message> messages) {
-        try {
-            List<Map<String, Object>> langfuseMessages = new ArrayList<>();
-            for (Message message : messages) {
-                Map<String, Object> langfuseMessage = new HashMap<>();
-                langfuseMessage.put("role", message.getMessageType().getValue());
-                langfuseMessage.put("content", message.getText());
-                langfuseMessages.add(langfuseMessage);
-            }
-            return langfuseMessages;
-        } catch (Exception e) {
-            logger.warn("转换消息格式失败: {}", e.getMessage());
-            return List.of(Map.of("role", "user", "content", "消息转换失败"));
-        }
-    }
-
-    /**
-     * 从 ChatResponse 中提取使用信息
-     */
-    private Map<String, Object> extractUsageInfo(ChatResponse chatResponse) {
-        try {
-            Map<String, Object> usage = new HashMap<>();
-            
-            if (chatResponse != null && chatResponse.getResult() != null) {
-                Generation generation = chatResponse.getResult();
-                ChatGenerationMetadata metadata = generation.getMetadata();
-                
-                if (metadata != null) {
-                    // 尝试获取 token 使用信息
-                    Object promptTokens = metadata.get("prompt-tokens");
-                    Object completionTokens = metadata.get("completion-tokens");
-                    Object totalTokens = metadata.get("total-tokens");
-                    
-                    if (promptTokens != null) usage.put("promptTokens", promptTokens);
-                    if (completionTokens != null) usage.put("completionTokens", completionTokens);
-                    if (totalTokens != null) usage.put("totalTokens", totalTokens);
-                    
-                    // 如果没有 token 信息，尝试其他字段
-                    if (usage.isEmpty()) {
-                        metadata.entrySet().stream()
-                            .filter(entry -> entry.getKey().toLowerCase().contains("token"))
-                            .forEach(entry -> usage.put(entry.getKey(), entry.getValue()));
-                    }
-                }
-            }
-            
-            // 如果没有找到任何 token 信息，返回空的 usage
-            return usage.isEmpty() ? Map.of() : usage;
-            
-        } catch (Exception e) {
-            logger.debug("提取使用信息失败: {}", e.getMessage());
-            return Map.of();
-        }
-    }
+    // LLM 追踪和观察现在由 Spring AI + OpenTelemetry 自动处理
+    // 不再需要手动的 Langfuse 集成辅助方法
 }
