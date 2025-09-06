@@ -13,6 +13,10 @@ import org.springframework.ai.chat.metadata.ChatGenerationMetadata;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
+import org.springframework.ai.chat.observation.ChatModelObservationContext;
+import org.springframework.ai.chat.observation.ChatModelObservationDocumentation;
+import org.springframework.ai.chat.observation.DefaultChatModelObservationConvention;
+import org.springframework.ai.chat.model.MessageAggregator;
 import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.model.tool.ToolCallingChatOptions;
@@ -73,6 +77,8 @@ public class ChatService {
     private com.xiaozhi.integration.memory.MemoryOrchestrator memoryOrchestrator;
 
     // LLM 追踪现在由 Spring AI + OpenTelemetry 自动处理
+    @jakarta.annotation.Resource
+    private io.micrometer.observation.ObservationRegistry observationRegistry;
 
     /**
      * 处理用户查询（同步方式）
@@ -208,8 +214,24 @@ public class ChatService {
             logger.info("Prompt options: {}", prompt.getOptions());
         }
         
-        // 调用实际的流式聊天方法
-        return chatModel.stream(prompt)
+        // 构建 Spring AI 追踪上下文（确保 prompt/response 能被 Langfuse 读取）
+        String provider = resolveProviderName(chatModel);
+        ChatModelObservationContext observationContext = ChatModelObservationContext.builder()
+                .prompt(prompt)
+                .provider(provider)
+                .build();
+
+        var observation = ChatModelObservationDocumentation.CHAT_MODEL_OPERATION
+                .observation(null, new DefaultChatModelObservationConvention(),
+                        () -> observationContext, this.observationRegistry)
+                .start();
+
+        // 聚合流式响应为一个最终 ChatResponse，以便在观察上下文中设置 response
+        Flux<ChatResponse> aggregated = new MessageAggregator()
+                .aggregate(chatModel.stream(prompt), observationContext::setResponse);
+
+        // 返回包裹了观察起止标记的流
+        return aggregated
                 .doOnNext(response -> {
                     if (response != null && response.getResult() != null) {
                         logger.debug("Stream response received: {}", response.getResult().getOutput() != null ? 
@@ -225,10 +247,24 @@ public class ChatService {
                     }
                     // Log full stack trace for debugging
                     logger.error("Stack trace:", error);
+                    observation.error(error);
                 })
-                .doOnComplete(() -> {
-                    logger.info("=== Chat Stream Completed ===");
-                });
+                .doOnTerminate(() -> {
+                    try {
+                        observation.stop();
+                    } catch (Exception ignore) {}
+                })
+                .doOnComplete(() -> logger.info("=== Chat Stream Completed ==="));
+    }
+
+    private String resolveProviderName(ChatModel chatModel) {
+        String simple = chatModel.getClass().getSimpleName().toLowerCase();
+        if (simple.contains("openai")) return "openai";
+        if (simple.contains("ollama")) return "ollama";
+        if (simple.contains("zhipu")) return "zhipu";
+        if (simple.contains("coze")) return "coze";
+        if (simple.contains("dify")) return "dify";
+        return simple;
     }
 
     public void chatStreamBySentence(ChatSession session, String message, boolean useFunctionCall,
