@@ -286,6 +286,8 @@
             <artifactId>netty-all</artifactId>
             <version>4.1.110.Final</version>
         </dependency>
+        <!-- HTTP Client for Langfuse API integration -->
+        <!-- Using existing OkHttp dependency for HTTP requests -->
     </dependencies>
 
     <build>

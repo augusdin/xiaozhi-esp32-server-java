@@ -91,6 +91,9 @@ public class DialogueService implements ApplicationListener<ChatSessionCloseEven
     @Resource
     private SysRoleService roleService;
 
+    @Resource
+    private com.xiaozhi.integration.langfuse.LangfuseService langfuseService;
+
     // 会话状态管理
     private final Map<String, AtomicInteger> seqCounters = new ConcurrentHashMap<>();
     private final Map<String, Long> sttStartTimes = new ConcurrentHashMap<>();
@@ -352,7 +355,15 @@ public class DialogueService implements ApplicationListener<ChatSessionCloseEven
             SysDevice device,
             byte[] initialAudio) {
         Assert.notNull(session, "session不能为空");
+        
+        // 创建 STT 追踪 Span
+        langfuseService.createSpan(sessionId, "stt-processing", 
+            Map.of("sttProvider", sttConfig != null ? sttConfig.getProvider() : "default",
+                   "deviceId", device.getDeviceId(),
+                   "audioSize", initialAudio != null ? initialAudio.length : 0), null);
+        
         Thread.startVirtualThread(() -> {
+            long sttStartTime = System.currentTimeMillis();
             try {
                 // 如果正在播放，先中断音频
                 if (audioService.isPlaying(sessionId)) {
@@ -387,11 +398,25 @@ public class DialogueService implements ApplicationListener<ChatSessionCloseEven
                 if (sessionManager.getAudioStream(sessionId) != null) {
                     finalText = sttService.streamRecognition(sessionManager.getAudioStream(sessionId));
                     if (!StringUtils.hasText(finalText)) {
+                        // STT 失败 - 记录追踪
+                        long sttDuration = System.currentTimeMillis() - sttStartTime;
+                        langfuseService.endSpan(sessionId, null, "empty_result", 
+                            Map.of("duration_ms", sttDuration, "success", false, "error", "空识别结果"));
                         return;
                     }
                 } else {
+                    // STT 失败 - 记录追踪
+                    long sttDuration = System.currentTimeMillis() - sttStartTime;
+                    langfuseService.endSpan(sessionId, null, "no_audio_stream", 
+                        Map.of("duration_ms", sttDuration, "success", false, "error", "无音频流"));
                     return;
                 }
+                
+                // STT 成功 - 记录追踪
+                long sttDuration = System.currentTimeMillis() - sttStartTime;
+                langfuseService.endSpan(sessionId, null, finalText, 
+                    Map.of("duration_ms", sttDuration, "success", true, "textLength", finalText.length()));
+                
                 // 获取完整的音频数据并保存
                 saveUserAudio(session);
 
@@ -565,6 +590,16 @@ public class DialogueService implements ApplicationListener<ChatSessionCloseEven
             SysConfig ttsConfig,
             String voiceName) {
 
+        // 创建 TTS 追踪 Span
+        String spanName = isFirst ? "tts-first-sentence" : (isLast ? "tts-last-sentence" : "tts-sentence");
+        langfuseService.createSpan(sessionId, spanName, 
+            Map.of("text", sentence.getText(),
+                   "sequence", sentence.getSeq(),
+                   "ttsProvider", ttsConfig != null ? ttsConfig.getProvider() : "default",
+                   "voiceName", voiceName != null ? voiceName : "default",
+                   "isFirst", isFirst,
+                   "isLast", isLast), null);
+
         // 创建TTS任务
         TtsTask task = new TtsTask(session, sessionId, sentence, emoSentence,
                 isFirst, isLast, ttsConfig, voiceName);
@@ -670,6 +705,15 @@ public class DialogueService implements ApplicationListener<ChatSessionCloseEven
 
         // 耗时操作需及时更新最后活动时间，避免误判为会话终止
         sessionManager.updateLastActivity(task.getSessionId());
+        
+        // TTS 成功 - 记录追踪
+        langfuseService.endSpan(task.getSessionId(), null, audioPath, 
+            Map.of("duration_ms", task.sentence.getTtsGenerationTime() * 1000,
+                   "success", true,
+                   "audioPath", audioPath != null ? audioPath : "null",
+                   "sequence", task.sentence.getSeq(),
+                   "moods", task.emoSentence.getMoods()));
+        
         // 记录日志
         logger.info("句子音频生成完成 - 序号: {}, 对话ID: {}, 模型响应: {}秒, 语音生成: {}秒, 内容: \"{}\"",
                 task.sentence.getSeq(), task.sentence.getAssistantTimeMillis(),
@@ -712,6 +756,16 @@ public class DialogueService implements ApplicationListener<ChatSessionCloseEven
         sessionManager.updateLastActivity(task.getSessionId());
         // 异常或失败，发送类似心跳包，避免设备端误判为会话终止
         messageService.sendEmotion(task.session, "happy");
+        
+        // TTS 失败 - 记录追踪（仅在达到最大重试次数时）
+        if (task.retryCount > MAX_RETRY_COUNT) {
+            langfuseService.endSpan(task.getSessionId(), null, "tts_failed", 
+                Map.of("success", false,
+                       "error", reason,
+                       "retryCount", task.retryCount,
+                       "sequence", task.sentence.getSeq(),
+                       "text", task.sentence.getText()));
+        }
 
         if (task.retryCount <= MAX_RETRY_COUNT) {
             // 创建新的任务对象而不是重用原对象，避免数据污染
@@ -923,6 +977,20 @@ public class DialogueService implements ApplicationListener<ChatSessionCloseEven
     public void handleText(ChatSession session, String inputText, Consumer<Long> textConsumer) {
         // 初始化对话状态
         String sessionId = session.getSessionId();
+        String deviceId = session.getSysDevice() != null ? session.getSysDevice().getDeviceId() : "unknown";
+        
+        // 开始文本处理追踪
+        langfuseService.startTrace(session, deviceId, 
+            Map.of("method", "handleText", "inputType", "text")).thenAccept(traceId -> {
+                if (traceId != null) {
+                    logger.debug("开始文本处理追踪: sessionId={}, traceId={}", sessionId, traceId);
+                }
+            });
+        
+        // 创建文本处理 Span
+        langfuseService.createSpan(sessionId, "text-input-processing", 
+            Map.of("inputText", inputText, "hasTextConsumer", textConsumer != null), null);
+        
         initChat(sessionId);
         Thread.startVirtualThread(() -> {
             try {
