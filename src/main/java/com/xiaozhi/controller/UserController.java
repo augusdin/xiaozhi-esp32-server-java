@@ -30,7 +30,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 import java.util.Map;
 
-import static io.github.biezhi.ome.OhMyEmail.SMTP_QQ;
+import static io.github.biezhi.ome.OhMyEmail.SMTP_163;
 
 /**
  * 用户信息
@@ -114,9 +114,13 @@ public class UserController extends BaseController {
             String name = (String) loginRequest.get("name");
             String tel = (String) loginRequest.get("tel");
             
-            int row = userService.queryCaptcha(code, email);
-            if (1 > row)
-                return AjaxResult.error("无效验证码");
+            // 临时跳过邮箱验证（仅用于测试环境）
+            boolean skipEmailVerification = "true".equals(System.getenv("SKIP_EMAIL_VERIFICATION"));
+            if (!skipEmailVerification) {
+                int row = userService.queryCaptcha(code, email);
+                if (1 > row)
+                    return AjaxResult.error("无效验证码");
+            }
                 
             SysUser user = new SysUser();
             user.setUsername(username);
@@ -261,7 +265,7 @@ public class UserController extends BaseController {
             }
 
             // 配置邮件发送
-            OhMyEmail.config(SMTP_QQ(false), emailUsername, emailPassword);
+            OhMyEmail.config(SMTP_163(false), emailUsername, emailPassword);
 
             // 发送邮件
             OhMyEmail.subject("小智ESP32-智能物联网管理平台")
