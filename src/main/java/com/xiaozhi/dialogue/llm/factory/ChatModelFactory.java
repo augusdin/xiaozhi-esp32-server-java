@@ -38,6 +38,7 @@ import org.springframework.util.MultiValueMap;
 import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 
 /**
  * ChatModel工厂
@@ -168,25 +169,20 @@ public class ChatModelFactory {
                                 .version(HttpClient.Version.HTTP_1_1)
                                 .connectTimeout(Duration.ofSeconds(30))
                                 .build()))
-                        // Add detailed request/response logging
+                        // Add simple request/response logging
                         .filter((request, next) -> {
                             logger.info("=== HTTP REQUEST ===");
-                            logger.info("Method: {}", request.method());
-                            logger.info("URL: {}", request.url());
+                            logger.info("Method: {}, URL: {}", request.method(), request.url());
                             logger.info("Headers: {}", request.headers());
                             
                             return next.exchange(request)
                                     .doOnNext(response -> {
                                         logger.info("=== HTTP RESPONSE ===");
                                         logger.info("Status: {}", response.statusCode());
-                                        logger.info("Headers: {}", response.headers().asHttpHeaders());
                                     })
-                                    .doOnError(error -> {
+                                    .doOnError(WebClientResponseException.class, ex -> {
                                         logger.error("=== HTTP ERROR ===");
-                                        logger.error("Error: {}", error.getMessage());
-                                        if (error.getCause() != null) {
-                                            logger.error("Cause: {}", error.getCause().getMessage());
-                                        }
+                                        logger.error("Status: {}, Body: {}", ex.getStatusCode(), ex.getResponseBodyAsString());
                                     });
                         }))
                 .restClientBuilder(RestClient.builder()

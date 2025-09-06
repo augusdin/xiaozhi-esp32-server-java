@@ -4,7 +4,6 @@ import com.xiaozhi.communication.common.ChatSession;
 import com.xiaozhi.dialogue.llm.api.StreamResponseListener;
 import com.xiaozhi.dialogue.llm.factory.ChatModelFactory;
 import com.xiaozhi.dialogue.llm.memory.ChatMemory;
-import com.xiaozhi.entity.SysMessage;
 import com.xiaozhi.utils.EmojiUtils;
 import jakarta.annotation.Resource;
 import org.slf4j.Logger;
@@ -180,6 +179,17 @@ public class ChatService {
         Prompt prompt = new Prompt(messages, chatOptions);
 
         logger.info("=== Calling ChatModel.stream() ===");
+        logger.info("Prompt messages count: {}", prompt.getInstructions().size());
+        for (int i = 0; i < prompt.getInstructions().size(); i++) {
+            var msg = prompt.getInstructions().get(i);
+            String content = msg.getText();
+            logger.info("Message[{}] - Type: {}, Content: {}", i, msg.getMessageType(), 
+                content != null && content.length() > 200 ? content.substring(0, 200) + "..." : content);
+        }
+        if (prompt.getOptions() != null) {
+            logger.info("Prompt options: {}", prompt.getOptions());
+        }
+        
         // 调用实际的流式聊天方法
         return chatModel.stream(prompt)
                 .doOnNext(response -> {
