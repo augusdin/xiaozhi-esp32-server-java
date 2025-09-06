@@ -27,7 +27,7 @@ import java.util.concurrent.TimeUnit;
 public class LangfuseClient {
     
     private static final Logger logger = LoggerFactory.getLogger(LangfuseClient.class);
-    private static final String API_PATH = "/api/public";
+    private static final String API_PATH = "/api/public/ingestion";
     
     @Autowired
     private LangfuseProperties properties;
@@ -61,9 +61,8 @@ public class LangfuseClient {
             this.gson = new Gson();
             this.executorService = Executors.newVirtualThreadPerTaskExecutor();
             
-            // 构建认证头
-            this.authHeader = "Basic " + java.util.Base64.getEncoder()
-                    .encodeToString((properties.getPublicKey() + ":" + properties.getSecretKey()).getBytes());
+            // 构建认证头 - Langfuse 使用 Bearer token 认证
+            this.authHeader = "Bearer " + properties.getSecretKey();
             
             logger.info("Langfuse HTTP 客户端初始化成功");
         } catch (Exception e) {
@@ -112,18 +111,35 @@ public class LangfuseClient {
             try {
                 String traceId = UUID.randomUUID().toString();
                 
+                // Langfuse ingestion API 格式
+                JsonObject event = new JsonObject();
+                event.addProperty("id", traceId);
+                event.addProperty("type", "trace-create");
+                event.addProperty("timestamp", Instant.now().toString());
+                
                 JsonObject body = new JsonObject();
                 body.addProperty("id", traceId);
                 body.addProperty("name", name);
-                body.addProperty("userId", userId);
-                body.addProperty("sessionId", sessionId);
-                body.addProperty("timestamp", Instant.now().toString());
-                
+                if (userId != null) {
+                    body.addProperty("userId", userId);
+                }
+                if (sessionId != null) {
+                    body.addProperty("sessionId", sessionId);
+                }
                 if (metadata != null && !metadata.isEmpty()) {
                     body.add("metadata", gson.toJsonTree(metadata));
                 }
                 
-                boolean success = sendRequest("/traces", body);
+                event.add("body", body);
+                
+                // 包装为事件数组
+                com.google.gson.JsonArray events = new com.google.gson.JsonArray();
+                events.add(event);
+                
+                JsonObject requestBody = new JsonObject();
+                requestBody.add("batch", events);
+                
+                boolean success = sendRequest("", requestBody);
                 return success ? traceId : null;
                 
             } catch (Exception e) {
@@ -146,6 +162,12 @@ public class LangfuseClient {
             try {
                 String spanId = UUID.randomUUID().toString();
                 
+                // Langfuse ingestion API 格式
+                JsonObject event = new JsonObject();
+                event.addProperty("id", spanId);
+                event.addProperty("type", "span-create");
+                event.addProperty("timestamp", Instant.now().toString());
+                
                 JsonObject body = new JsonObject();
                 body.addProperty("id", spanId);
                 body.addProperty("traceId", traceId);
@@ -160,7 +182,16 @@ public class LangfuseClient {
                     body.add("metadata", gson.toJsonTree(metadata));
                 }
                 
-                boolean success = sendRequest("/spans", body);
+                event.add("body", body);
+                
+                // 包装为事件数组
+                com.google.gson.JsonArray events = new com.google.gson.JsonArray();
+                events.add(event);
+                
+                JsonObject requestBody = new JsonObject();
+                requestBody.add("batch", events);
+                
+                boolean success = sendRequest("", requestBody);
                 return success ? spanId : null;
                 
             } catch (Exception e) {
@@ -180,6 +211,12 @@ public class LangfuseClient {
         
         return CompletableFuture.runAsync(() -> {
             try {
+                // Langfuse ingestion API 格式
+                JsonObject event = new JsonObject();
+                event.addProperty("id", spanId);
+                event.addProperty("type", "span-update");
+                event.addProperty("timestamp", Instant.now().toString());
+                
                 JsonObject body = new JsonObject();
                 body.addProperty("id", spanId);
                 body.addProperty("endTime", Instant.now().toString());
@@ -192,7 +229,16 @@ public class LangfuseClient {
                     body.add("metadata", gson.toJsonTree(metadata));
                 }
                 
-                sendRequest("/spans", body);
+                event.add("body", body);
+                
+                // 包装为事件数组
+                com.google.gson.JsonArray events = new com.google.gson.JsonArray();
+                events.add(event);
+                
+                JsonObject requestBody = new JsonObject();
+                requestBody.add("batch", events);
+                
+                sendRequest("", requestBody);
                 
             } catch (Exception e) {
                 logger.error("结束 Span 失败: {}", e.getMessage(), e);
@@ -212,11 +258,21 @@ public class LangfuseClient {
         
         return CompletableFuture.runAsync(() -> {
             try {
+                String generationId = UUID.randomUUID().toString();
+                
+                // Langfuse ingestion API 格式
+                JsonObject event = new JsonObject();
+                event.addProperty("id", generationId);
+                event.addProperty("type", "generation-create");
+                event.addProperty("timestamp", Instant.now().toString());
+                
                 JsonObject body = new JsonObject();
-                body.addProperty("id", UUID.randomUUID().toString());
+                body.addProperty("id", generationId);
                 body.addProperty("traceId", traceId);
                 body.addProperty("name", "llm-generation");
-                body.addProperty("model", model);
+                if (model != null) {
+                    body.addProperty("model", model);
+                }
                 body.addProperty("startTime", Instant.now().toString());
                 body.addProperty("endTime", Instant.now().toString());
                 
@@ -236,7 +292,16 @@ public class LangfuseClient {
                     body.add("metadata", gson.toJsonTree(metadata));
                 }
                 
-                sendRequest("/generations", body);
+                event.add("body", body);
+                
+                // 包装为事件数组
+                com.google.gson.JsonArray events = new com.google.gson.JsonArray();
+                events.add(event);
+                
+                JsonObject requestBody = new JsonObject();
+                requestBody.add("batch", events);
+                
+                sendRequest("", requestBody);
                 
             } catch (Exception e) {
                 logger.error("创建生成记录失败: {}", e.getMessage(), e);
@@ -274,10 +339,11 @@ public class LangfuseClient {
             
             try (Response response = httpClient.newCall(request).execute()) {
                 if (response.isSuccessful()) {
-                    logger.debug("成功发送请求到 Langfuse: {}", endpoint);
+                    logger.info("成功发送请求到 Langfuse: {}", endpoint);
                     return true;
                 } else {
-                    logger.warn("Langfuse 请求失败: {} - {}", response.code(), response.message());
+                    logger.error("Langfuse 请求失败: {} - {}, URL: {}, Body: {}", 
+                        response.code(), response.message(), url, body.toString());
                     return false;
                 }
             }
