@@ -1,13 +1,11 @@
 package com.xiaozhi.integration.langfuse;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
-import org.springframework.stereotype.Component;
 
 /**
  * Langfuse 配置属性
  * 对应 application.properties 中的 langfuse.* 配置项
  */
-@Component
 @ConfigurationProperties(prefix = "langfuse")
 public class LangfuseProperties {
     
