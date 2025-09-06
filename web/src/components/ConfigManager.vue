@@ -108,7 +108,7 @@
                         allowClear
                         :placeholder="`请输入${configTypeInfo.label}名称`"
                         :options="modelOptions"
-                        :filterOption="modelFilterOption"
+                        :filterOption="filterOption"
                         @search="handleModelInputChange"
                         @change="handleModelChange"
                         @blur="handleModelBlur">
