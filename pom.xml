@@ -115,6 +115,9 @@
             <groupId>io.micrometer</groupId>
             <artifactId>micrometer-tracing-bridge-otel</artifactId>
         </dependency>
+        <!-- Micrometer Actuator OTLP tracing 不需要单独 reporter 依赖；
+             Spring Boot 3.3 使用 micrometer-tracing-bridge-otel + opentelemetry-exporter-otlp 即可
+             通过 management.otlp.tracing.* 配置启用导出 -->
         <!-- OpenTelemetry OTLP exporter for traces -->
         <dependency>
             <groupId>io.opentelemetry</groupId>

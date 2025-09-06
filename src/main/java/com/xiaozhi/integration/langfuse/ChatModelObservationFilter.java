@@ -20,6 +20,8 @@ import java.util.List;
 @Component
 public class ChatModelObservationFilter implements ObservationFilter {
 
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(ChatModelObservationFilter.class);
+
     @Override
     public Observation.Context map(Observation.Context context) {
         if (!(context instanceof ChatModelObservationContext chatModelObservationContext)) {
@@ -28,6 +30,14 @@ public class ChatModelObservationFilter implements ObservationFilter {
 
         var prompts = processPrompts(chatModelObservationContext);
         var completions = processCompletion(chatModelObservationContext);
+
+        try {
+            // 仅用于排查：确认过滤器已被调用并统计内容长度
+            int inLen = prompts.stream().mapToInt(s -> s != null ? s.length() : 0).sum();
+            int outLen = completions.stream().mapToInt(s -> s != null ? s.length() : 0).sum();
+            log.info("[LangfuseFilter] observed provider={}, promptChars={}, completionChars={}",
+                    chatModelObservationContext.getProvider(), inLen, outLen);
+        } catch (Exception ignore) {}
 
         // 添加prompt内容到追踪
         chatModelObservationContext.addHighCardinalityKeyValue(new KeyValue() {
