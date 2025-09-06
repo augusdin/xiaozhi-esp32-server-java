@@ -150,10 +150,10 @@ public class ChatModelFactory {
         headers.add("Content-Type", "application/json");
 
         // LM Studio不支持Http/2，所以需要强制使用HTTP/1.1
-        logger.info("Creating OpenAI API client with baseUrl: {}", endpoint);
         var openAiApi = OpenAiApi.builder()
                 .apiKey(StringUtils.hasText(apiKey) ? new SimpleApiKey(apiKey) : new NoopApiKey())
                 .baseUrl(endpoint)
+                .completionsPath("/chat/completions")
                 .headers(headers)
                 .webClientBuilder(WebClient.builder()
                         // Force HTTP/1.1 for streaming
