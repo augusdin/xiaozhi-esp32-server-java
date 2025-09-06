@@ -139,16 +139,32 @@ public class ChatService {
      */
     public Flux<ChatResponse> chatStream(ChatSession session, String message,
             boolean useFunctionCall) {
+        logger.info("=== Chat Stream Request ===");
+        logger.info("Message: {}", message);
+        logger.info("UseFunctionCall: {}", useFunctionCall);
+        logger.info("SessionId: {}", session.getSessionId());
+        logger.info("DeviceId: {}", session.getSysDevice() != null ? session.getSysDevice().getDeviceId() : "null");
+        
         // 获取ChatModel
         ChatModel chatModel = chatModelFactory.takeChatModel(session);
+        logger.info("ChatModel type: {}", chatModel.getClass().getSimpleName());
 
         ChatOptions chatOptions = ToolCallingChatOptions.builder()
                 .toolCallbacks(useFunctionCall ? session.getToolCallbacks() : new ArrayList<>())
                 .toolContext(TOOL_CONTEXT_SESSION_KEY, session)
                 .build();
 
+        logger.info("Tool callbacks count: {}", useFunctionCall ? session.getToolCallbacks().size() : 0);
+        if (useFunctionCall && !session.getToolCallbacks().isEmpty()) {
+            session.getToolCallbacks().forEach(callback -> 
+                logger.info("Tool: {} - {}", callback.getToolDefinition().name(), callback.getToolDefinition().description())
+            );
+        }
+
         UserMessage userMessage = new UserMessage(message);
         List<Message> messages = session.getConversation().prompt(userMessage);
+        logger.info("Conversation messages count: {}", messages.size());
+        
         // 注入 MemOS 检索到的记忆上下文（作为系统补充）
         try {
             if (memoryOrchestrator != null && memoryOrchestrator.isMemosEnabled()) {
@@ -157,13 +173,34 @@ public class ChatService {
                     List<Message> enriched = new java.util.ArrayList<>(messages);
                     enriched.add(1, new SystemMessage(memContext));
                     messages = enriched;
+                    logger.info("Added MemOS context, total messages: {}", messages.size());
                 }
             }
         } catch (Exception ignore) {}
         Prompt prompt = new Prompt(messages, chatOptions);
 
+        logger.info("=== Calling ChatModel.stream() ===");
         // 调用实际的流式聊天方法
-        return chatModel.stream(prompt);
+        return chatModel.stream(prompt)
+                .doOnNext(response -> {
+                    if (response != null && response.getResult() != null) {
+                        logger.debug("Stream response received: {}", response.getResult().getOutput() != null ? 
+                            response.getResult().getOutput().getText() : "null");
+                    }
+                })
+                .doOnError(error -> {
+                    logger.error("=== Chat Stream Error ===");
+                    logger.error("Error type: {}", error.getClass().getSimpleName());
+                    logger.error("Error message: {}", error.getMessage());
+                    if (error.getCause() != null) {
+                        logger.error("Cause: {}", error.getCause().getMessage());
+                    }
+                    // Log full stack trace for debugging
+                    logger.error("Stack trace:", error);
+                })
+                .doOnComplete(() -> {
+                    logger.info("=== Chat Stream Completed ===");
+                });
     }
 
     public void chatStreamBySentence(ChatSession session, String message, boolean useFunctionCall,

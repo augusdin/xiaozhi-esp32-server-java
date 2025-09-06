@@ -150,6 +150,13 @@ public class ChatModelFactory {
         headers.add("Content-Type", "application/json");
 
         // LM Studio不支持Http/2，所以需要强制使用HTTP/1.1
+        logger.info("=== OpenAI API Configuration ===");
+        logger.info("BaseURL: {}", endpoint);
+        logger.info("Model: {}", model);
+        logger.info("Temperature: {}", temperature);
+        logger.info("TopP: {}", topP);
+        logger.info("API Key (masked): {}***", apiKey != null && apiKey.length() > 10 ? apiKey.substring(0, 10) : "null");
+        
         var openAiApi = OpenAiApi.builder()
                 .apiKey(StringUtils.hasText(apiKey) ? new SimpleApiKey(apiKey) : new NoopApiKey())
                 .baseUrl(endpoint)
@@ -160,13 +167,64 @@ public class ChatModelFactory {
                         .clientConnector(new JdkClientHttpConnector(HttpClient.newBuilder()
                                 .version(HttpClient.Version.HTTP_1_1)
                                 .connectTimeout(Duration.ofSeconds(30))
-                                .build())))
+                                .build()))
+                        // Add detailed request/response logging
+                        .filter((request, next) -> {
+                            logger.info("=== HTTP REQUEST ===");
+                            logger.info("Method: {}", request.method());
+                            logger.info("URL: {}", request.url());
+                            logger.info("Headers: {}", request.headers());
+                            
+                            return next.exchange(request)
+                                    .doOnNext(response -> {
+                                        logger.info("=== HTTP RESPONSE ===");
+                                        logger.info("Status: {}", response.statusCode());
+                                        logger.info("Headers: {}", response.headers().asHttpHeaders());
+                                    })
+                                    .doOnError(error -> {
+                                        logger.error("=== HTTP ERROR ===");
+                                        logger.error("Error: {}", error.getMessage());
+                                        if (error.getCause() != null) {
+                                            logger.error("Cause: {}", error.getCause().getMessage());
+                                        }
+                                    });
+                        }))
                 .restClientBuilder(RestClient.builder()
                         // Force HTTP/1.1 for non-streaming
                         .requestFactory(new JdkClientHttpRequestFactory(HttpClient.newBuilder()
                                 .version(HttpClient.Version.HTTP_1_1)
                                 .connectTimeout(Duration.ofSeconds(30))
-                                .build())))
+                                .build()))
+                        // Add detailed request/response logging for non-streaming
+                        .requestInterceptor((request, body, execution) -> {
+                            logger.info("=== REST CLIENT REQUEST ===");
+                            logger.info("Method: {}", request.getMethod());
+                            logger.info("URI: {}", request.getURI());
+                            logger.info("Headers: {}", request.getHeaders());
+                            if (body != null && body.length > 0) {
+                                try {
+                                    String bodyStr = new String(body, java.nio.charset.StandardCharsets.UTF_8);
+                                    logger.info("Request Body: {}", bodyStr);
+                                } catch (Exception e) {
+                                    logger.warn("Failed to log request body: {}", e.getMessage());
+                                }
+                            }
+                            
+                            try {
+                                var response = execution.execute(request, body);
+                                logger.info("=== REST CLIENT RESPONSE ===");
+                                logger.info("Status: {}", response.getStatusCode());
+                                logger.info("Headers: {}", response.getHeaders());
+                                return response;
+                            } catch (Exception e) {
+                                logger.error("=== REST CLIENT ERROR ===");
+                                logger.error("Error: {}", e.getMessage());
+                                if (e.getCause() != null) {
+                                    logger.error("Cause: {}", e.getCause().getMessage());
+                                }
+                                throw e;
+                            }
+                        }))
                 .build();
         var openAiChatOptions = OpenAiChatOptions.builder()
                 .model(model)
