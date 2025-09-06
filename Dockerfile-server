@@ -26,7 +26,7 @@ COPY ./db ./db
 COPY pom.xml ./
 
 # 构建应用，跳过测试提高速度（使用缓存的 ~/.m2）
-RUN --mount=type=cache,target=/root/.m2 mvn clean package -DskipTests -B -q
+RUN --mount=type=cache,target=/root/.m2 mvn clean package -DskipTests -B -e
 
 # 提取版本号
 RUN APP_VERSION=$(grep -A1 "<artifactId>xiaozhi.server</artifactId>" pom.xml | \
