@@ -43,7 +43,7 @@
         <!-- 表格数据 -->
         <a-card :bodyStyle="{ padding: 0 }" :bordered="false">
           <a-tabs defaultActiveKey="1" :activeKey="activeTabKey" @change="handleTabChange"
-            tabBarStyle="margin: 0 0 0 15px">
+            :tabBarStyle="{ margin: '0 0 0 15px' }">
             <a-tab-pane key="1" :tab="`${configTypeInfo.label}列表`">
               <a-table :columns="getColumns" :dataSource="configItems" :loading="loading" :pagination="pagination"
                 rowKey="configId" :scroll="{ x: 800 }" size="middle">
