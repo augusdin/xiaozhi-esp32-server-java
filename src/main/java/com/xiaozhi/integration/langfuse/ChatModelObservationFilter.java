@@ -35,8 +35,7 @@ public class ChatModelObservationFilter implements ObservationFilter {
             // 仅用于排查：确认过滤器已被调用并统计内容长度
             int inLen = prompts.stream().mapToInt(s -> s != null ? s.length() : 0).sum();
             int outLen = completions.stream().mapToInt(s -> s != null ? s.length() : 0).sum();
-            log.info("[LangfuseFilter] observed provider={}, promptChars={}, completionChars={}",
-                    chatModelObservationContext.getProvider(), inLen, outLen);
+            log.info("[LangfuseFilter] observed promptChars={}, completionChars={}", inLen, outLen);
         } catch (Exception ignore) {}
 
         // 添加prompt内容到追踪
