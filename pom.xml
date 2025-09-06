@@ -103,7 +103,13 @@
             <artifactId>spring-ai-starter-mcp-client</artifactId>
         </dependency>
         
-        <!-- Micrometer → OpenTelemetry 桥接 + OTLP 导出（不引入 starter，避免通用HTTP/JDBC自动探针噪音） -->
+        <!-- OpenTelemetry Spring Boot Starter: 提供 OTel SDK 与自动配置（通过环境变量精确关闭HTTP/JDBC探针） -->
+        <dependency>
+            <groupId>io.opentelemetry.instrumentation</groupId>
+            <artifactId>opentelemetry-spring-boot-starter</artifactId>
+        </dependency>
+
+        <!-- Micrometer → OpenTelemetry 桥接 + OTLP 导出 -->
         <!-- Micrometer Observation -> OpenTelemetry bridge -->
         <dependency>
             <groupId>io.micrometer</groupId>
