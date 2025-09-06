@@ -116,7 +116,29 @@ public class ChatService {
             } catch (Exception ignore) {}
             Prompt prompt = new Prompt(messages,chatOptions);
 
-            ChatResponse chatResponse = chatModel.call(prompt);
+            // 手动包裹一次同步调用的观察，确保 Langfuse 能捕捉到非流式调用
+            String provider = resolveProviderName(chatModel);
+            ChatModelObservationContext observationContext = ChatModelObservationContext.builder()
+                    .prompt(prompt)
+                    .provider(provider)
+                    .build();
+
+            var observation = ChatModelObservationDocumentation.CHAT_MODEL_OPERATION
+                    .observation(null, new DefaultChatModelObservationConvention(),
+                            () -> observationContext, this.observationRegistry)
+                    .start();
+
+            ChatResponse chatResponse;
+            try {
+                chatResponse = chatModel.call(prompt);
+                // 设置响应到上下文以便过滤器可读取 gen_ai.completion
+                observationContext.setResponse(chatResponse);
+            } catch (Exception ex) {
+                observation.error(ex);
+                throw ex;
+            } finally {
+                try { observation.stop(); } catch (Exception ignore) {}
+            }
             
             // LLM 调用和时间由 Spring AI + OpenTelemetry 自动记录
             
