@@ -40,10 +40,10 @@ memory.memos-enabled=true
 # 增加超时时间（MemOS 初始化较慢）
 memory.memos-timeout-ms=5000
 
-# 确保环境变量配置
-# 在系统环境变量或 Docker 环境中设置：
-# OPENAI_API_KEY=sk-iTpKfmPIH0mDuZ0o12C56dA6CaF5406eAf34EcBe4406A494
-# OPENAI_API_BASE=https://api.aihubmix.com/v1
+# 确保环境变量配置（推荐通过代理）
+# 在部署主机或 Docker 环境中设置：
+# OPENAI_API_BASE=https://aihubmix.com/v1
+# OPENAI_API_KEY=sk-xxxxxxxx（请替换为有效密钥）
 ```
 
 ### **步骤 2: 验证远程服务**
@@ -57,7 +57,7 @@ curl http://107.173.38.186:8000/docs
 # 检查 Neo4j 数据库
 curl http://107.173.38.186:7474
 
-# 检查环境变量
+# 检查环境变量（代理）
 ssh -i ~/.ssh/xiaozhi_deploy root@107.173.38.186 'docker logs memos-api --tail 10'
 ```
 
@@ -298,3 +298,7 @@ memory.mem0-enabled=true
 ---
 
 **开启 MemOS 后，你的 AI 助手将具备真正的长期记忆能力！** 🎉
+#### 4. Product API 字段与行为
+- /product/users/register 的 `interests` 字段为字符串或 null，不能为空数组。
+- /product/configure 期望 `config` 为可解析的模型对象，当前版本可能无法直接使用 JSON body，需要通过 query 传入字符串（并保证后端正常解析）。
+- 若注册默认 cube 时报 Neo4j auto_create 断言错误，请检查服务端默认 cube 配置，允许自动创建或预置 cube。

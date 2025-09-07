@@ -139,3 +139,5 @@ jobs:
           
           # Show logs for verification
           docker-compose logs --tail=20
+
+          # MemOS is managed outside of CI/CD to keep pipeline fast

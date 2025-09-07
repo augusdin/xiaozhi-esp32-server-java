@@ -56,6 +56,12 @@ services:
       # 邮箱配置
       - EMAIL_SMTP_USERNAME=noreply@xiaozhi.com
       - EMAIL_SMTP_PASSWORD=defaultpassword
+      # OpenAI 代理（用于 MemOS 配置构建等场景）
+      # 在部署主机上预先导出：
+      #   export OPENAI_API_BASE=https://aihubmix.com/v1
+      #   export OPENAI_API_KEY=sk-xxxxxxxx
+      - OPENAI_API_BASE=${OPENAI_API_BASE:-https://aihubmix.com/v1}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
     # 优化内存限制适配2GB RAM环境
     deploy:
       resources:

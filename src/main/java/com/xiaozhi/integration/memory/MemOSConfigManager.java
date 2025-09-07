@@ -77,7 +77,7 @@ public class MemOSConfigManager {
             String json = String.format("{" +
                     "\"user_id\":\"%s\"," +
                     "\"user_name\":\"%s\"," +
-                    "\"interests\":[]" +
+                    "\"interests\":\"\"" +
                     "}", escape(userId), escape(userId));
             Request request = new Request.Builder()
                     .url(url)
