@@ -9,12 +9,14 @@ import okhttp3.Response;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.*;
+import com.xiaozhi.common.interceptor.UnLogin;
 
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
 
 @RestController
+@UnLogin
 @RequestMapping("/memory")
 public class MemoryController extends BaseController {
     private static final Logger logger = LoggerFactory.getLogger(MemoryController.class);
@@ -93,5 +95,15 @@ public class MemoryController extends BaseController {
 
         return AjaxResult.success("done", data);
     }
-}
 
+    @PostMapping("/enable")
+    public AjaxResult enable(@RequestParam(value = "memos", required = false) Boolean memos) {
+        if (memos != null) {
+            memoryProperties.setMemosEnabled(memos);
+        }
+        Map<String, Object> data = new HashMap<>();
+        data.put("memos.enabled", memoryProperties.isMemosEnabled());
+        data.put("memos.url", memoryProperties.getMemosUrl());
+        return AjaxResult.success("ok", data);
+    }
+}

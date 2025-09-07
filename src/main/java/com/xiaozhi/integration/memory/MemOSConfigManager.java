@@ -52,6 +52,13 @@ public class MemOSConfigManager {
                 return true;
             }
 
+            // 其次尝试产品化配置：/product/configure?config=...
+            if (tryProductConfigure(userId)) {
+                configuredUsers.put(userId, true);
+                logger.info("MemOS (product) configure accepted for user: {}", userId);
+                return true;
+            }
+
             // 兼容回退：使用根 API（/configure + 需要额外的 /mem_cubes 注册，当前不自动注册）
             if (configureMOS(userId)) {
                 configuredUsers.put(userId, true);
@@ -63,6 +70,31 @@ public class MemOSConfigManager {
 
         } catch (Exception e) {
             logger.error("Failed to configure MemOS for user {}: {}", userId, e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * 通过产品化 API 配置 MOS（query 参数传递 JSON 配置）
+     */
+    private boolean tryProductConfigure(String userId) {
+        try {
+            String base = properties.getMemosUrl().replaceAll("/$", "");
+            String cfg = java.net.URLEncoder.encode(buildMOSConfig(userId), java.nio.charset.StandardCharsets.UTF_8);
+            String url = base + "/product/configure?config=" + cfg;
+            Request request = new Request.Builder().url(url).post(RequestBody.create(new byte[0], null)).build();
+            try (Response resp = http.newCall(request).execute()) {
+                String body = resp.body() != null ? resp.body().string() : "";
+                if (resp.isSuccessful()) {
+                    logger.debug("MemOS product configure ok: {}", body);
+                    return true;
+                } else {
+                    logger.info("MemOS product configure failed: status={} body={}", resp.code(), body);
+                    return false;
+                }
+            }
+        } catch (Exception e) {
+            logger.info("MemOS product configure error: {}", e.toString());
             return false;
         }
     }

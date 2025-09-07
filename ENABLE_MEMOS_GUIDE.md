@@ -299,6 +299,6 @@ memory.mem0-enabled=true
 
 **开启 MemOS 后，你的 AI 助手将具备真正的长期记忆能力！** 🎉
 #### 4. Product API 字段与行为
-- /product/users/register 的 `interests` 字段为字符串或 null，不能为空数组。
-- /product/configure 期望 `config` 为可解析的模型对象，当前版本可能无法直接使用 JSON body，需要通过 query 传入字符串（并保证后端正常解析）。
+- /product/users/register 的 `interests` 字段为字符串或 null，不能为空数组（客户端已修正为字符串）。
+- /product/configure 期望 `config` 为可解析的模型对象，当前版本可能无法直接使用 JSON body，客户端已增加通过 query 传参的回退（以服务端实现为准）。
 - 若注册默认 cube 时报 Neo4j auto_create 断言错误，请检查服务端默认 cube 配置，允许自动创建或预置 cube。
