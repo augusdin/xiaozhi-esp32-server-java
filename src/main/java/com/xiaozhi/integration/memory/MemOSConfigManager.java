@@ -21,6 +21,12 @@ public class MemOSConfigManager {
     
     // 缓存已配置的用户，避免重复初始化
     private final Map<String, Boolean> configuredUsers = new ConcurrentHashMap<>();
+    // 产品化 API 下缓存用户的 mem_cube_id
+    private final Map<String, String> userCubeIds = new ConcurrentHashMap<>();
+
+    public String getUserCubeId(String userId) {
+        return userCubeIds.get(userId);
+    }
 
     public MemOSConfigManager(MemoryProperties properties) {
         this.properties = properties;
@@ -39,22 +45,69 @@ public class MemOSConfigManager {
         }
 
         try {
-            // 1. 配置用户和 MOS
-            if (!configureMOS(userId)) {
-                return false;
+            // 优先走产品化 API：/product/users/register
+            if (tryProductRegister(userId)) {
+                configuredUsers.put(userId, true);
+                logger.info("MemOS (product) user configuration completed for: {} cubeId={}", userId, userCubeIds.get(userId));
+                return true;
             }
 
-            // 2. 创建和注册 MemCube  
-            if (!createAndRegisterMemCube(userId)) {
-                return false;
+            // 兼容回退：使用根 API（/configure + 需要额外的 /mem_cubes 注册，当前不自动注册）
+            if (configureMOS(userId)) {
+                configuredUsers.put(userId, true);
+                logger.info("MemOS (root) user configured for: {} (mem_cubes registration required)", userId);
+                return true;
             }
 
-            configuredUsers.put(userId, true);
-            logger.info("MemOS user configuration completed for: {}", userId);
-            return true;
+            return false;
 
         } catch (Exception e) {
             logger.error("Failed to configure MemOS for user {}: {}", userId, e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * 使用产品 API 注册用户，并缓存 mem_cube_id
+     */
+    private boolean tryProductRegister(String userId) {
+        try {
+            String base = properties.getMemosUrl().replaceAll("/$", "");
+            String url = base + "/product/users/register";
+            String json = String.format("{" +
+                    "\"user_id\":\"%s\"," +
+                    "\"user_name\":\"%s\"," +
+                    "\"interests\":[]" +
+                    "}", escape(userId), escape(userId));
+            Request request = new Request.Builder()
+                    .url(url)
+                    .post(RequestBody.create(json, MediaType.parse("application/json")))
+                    .build();
+
+            try (Response resp = http.newCall(request).execute()) {
+                String body = resp.body() != null ? resp.body().string() : "";
+                if (!resp.isSuccessful()) {
+                    // 404 代表产品 API 不可用，交由上层回退
+                    logger.info("MemOS product register not available or failed: status={} body={}", resp.code(), body);
+                    return false;
+                }
+                // 解析 data.mem_cube_id
+                try {
+                    com.fasterxml.jackson.databind.JsonNode root = new com.fasterxml.jackson.databind.ObjectMapper().readTree(body);
+                    String cubeId = null;
+                    if (root.has("data") && root.get("data").has("mem_cube_id")) {
+                        cubeId = root.get("data").get("mem_cube_id").asText();
+                    }
+                    if (cubeId != null && !cubeId.isBlank()) {
+                        userCubeIds.put(userId, cubeId);
+                        return true;
+                    }
+                } catch (Exception ignore) {}
+                logger.warn("MemOS product register succeeded but mem_cube_id not found. body={}", body);
+                return true; // 依然视为配置成功
+            }
+        } catch (Exception e) {
+            logger.info("MemOS product register error: {}", e.toString());
             return false;
         }
     }

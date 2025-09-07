@@ -39,13 +39,18 @@ public class MemOSClient {
         }
         
         try {
-            // 1. 确保用户已配置
+            // 1. 确保用户已配置（优先产品 API）
             if (!configManager.ensureUserConfigured(userId)) {
                 logger.warn("Failed to configure MemOS for user: {}", userId);
                 return null;
             }
-            
-            // 2. 执行搜索
+
+            // 2. 优先产品 API 搜索
+            String cubeId = configManager.getUserCubeId(userId);
+            String product = productSearch(userId, cubeId, query, properties.getMemosTopK());
+            if (product != null) return product;
+
+            // 3. 回退根 API 搜索
             return performSearch(userId, query);
             
         } catch (Exception e) {
@@ -89,6 +94,41 @@ public class MemOSClient {
             
         } catch (Exception e) {
             logger.warn("MemOS search error for user {}: {}", userId, e.getMessage());
+            return null;
+        }
+    }
+    
+    /** 使用产品 API 搜索 */
+    private String productSearch(String userId, String memCubeId, String query, int topK) {
+        try {
+            String base = properties.getMemosUrl().replaceAll("/$", "");
+            String url = base + "/product/search";
+            StringBuilder sb = new StringBuilder();
+            sb.append("{");
+            sb.append("\"query\":\"").append(escape(query)).append("\",");
+            sb.append("\"user_id\":\"").append(escape(userId)).append("\"");
+            if (memCubeId != null && !memCubeId.isBlank()) {
+                sb.append(",\"mem_cube_id\":\"").append(escape(memCubeId)).append("\"");
+            }
+            sb.append(",\"top_k\":").append(Math.max(1, topK));
+            sb.append("}");
+
+            Request request = new Request.Builder()
+                    .url(url)
+                    .post(RequestBody.create(sb.toString(), MediaType.parse("application/json")))
+                    .build();
+
+            try (Response resp = http.newCall(request).execute()) {
+                if (!resp.isSuccessful() || resp.body() == null) {
+                    String body = resp.body() != null ? resp.body().string() : "";
+                    logger.info("MemOS product search not available or failed: status={} body={}", resp.code(), body);
+                    return null;
+                }
+                String body = resp.body().string();
+                return parseSearchResponse(body);
+            }
+        } catch (Exception e) {
+            logger.info("MemOS product search error: {}", e.toString());
             return null;
         }
     }
@@ -176,40 +216,78 @@ public class MemOSClient {
      */
     public void addMemory(String userId, String content) {
         try {
-            // 1. 确保用户已配置
+            // 1) 确保用户已配置
             if (!configManager.ensureUserConfigured(userId)) {
                 logger.warn("Failed to configure MemOS for user: {}", userId);
                 return;
             }
-            
-            // 2. 存储记忆
-            String url = properties.getMemosUrl().replaceAll("/$", "") + "/memories";
-            
-            String json = String.format("""
-                {
-                  "user_id": "%s",
-                  "cube_id": "%s_cube",
-                  "content": "%s",
-                  "type": "textual"
+
+            // 2) 优先产品 API 写入
+            String cubeId = configManager.getUserCubeId(userId);
+            if (tryProductAdd(userId, cubeId, content)) return;
+
+            // 3) 回退根 API 写入（要求已配置可访问的 cube）
+            tryRootAdd(userId, content);
+
+        } catch (Exception e) {
+            logger.warn("MemOS addMemory error for user {}: {}", userId, e.getMessage());
+        }
+    }
+
+    private boolean tryProductAdd(String userId, String memCubeId, String content) {
+        try {
+            String base = properties.getMemosUrl().replaceAll("/$", "");
+            String url = base + "/product/add";
+            StringBuilder sb = new StringBuilder();
+            sb.append("{");
+            sb.append("\"user_id\":\"").append(escape(userId)).append("\"");
+            if (memCubeId != null && !memCubeId.isBlank()) {
+                sb.append(",\"mem_cube_id\":\"").append(escape(memCubeId)).append("\"");
+            }
+            sb.append(",\"memory_content\":\"").append(escape(content)).append("\"");
+            sb.append("}");
+
+            Request request = new Request.Builder()
+                    .url(url)
+                    .post(RequestBody.create(sb.toString(), MediaType.parse("application/json")))
+                    .build();
+            try (Response resp = http.newCall(request).execute()) {
+                String body = resp.body() != null ? resp.body().string() : "";
+                if (resp.isSuccessful()) {
+                    logger.debug("MemOS (product) memory stored: user={} cube={} resp={}", userId, memCubeId, body);
+                    return true;
+                } else {
+                    logger.info("MemOS (product) add failed: status={} body={}", resp.code(), body);
+                    return false;
                 }
-                """, escape(userId), escape(userId), escape(content));
-            
+            }
+        } catch (Exception e) {
+            logger.info("MemOS (product) add error: {}", e.toString());
+            return false;
+        }
+    }
+
+    private void tryRootAdd(String userId, String content) {
+        try {
+            String url = properties.getMemosUrl().replaceAll("/$", "") + "/memories";
+            String json = String.format("{" +
+                    "\"user_id\":\"%s\"," +
+                    "\"memory_content\":\"%s\"" +
+                    "}", escape(userId), escape(content));
             Request request = new Request.Builder()
                     .url(url)
                     .post(RequestBody.create(json, MediaType.parse("application/json")))
                     .build();
-                    
             try (Response resp = http.newCall(request).execute()) {
                 String body = resp.body() != null ? resp.body().string() : "";
                 if (resp.isSuccessful()) {
-                    logger.debug("MemOS memory stored successfully for user: {} resp={}", userId, body);
+                    logger.debug("MemOS (root) memory stored: user={} resp={}", userId, body);
                 } else {
-                    logger.warn("MemOS memory storage failed for user {}: status={} body={}", userId, resp.code(), body);
+                    logger.warn("MemOS (root) add failed: status={} body={}", resp.code(), body);
                 }
             }
-            
         } catch (Exception e) {
-            logger.warn("MemOS addMemory error for user {}: {}", userId, e.getMessage());
+            logger.info("MemOS (root) add error: {}", e.toString());
         }
     }
 
