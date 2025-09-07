@@ -126,34 +126,69 @@ public class MemOSConfigManager {
      * 构建 MOS 配置 JSON
      */
     private String buildMOSConfig(String userId) {
+        String apiKey = getOpenAIApiKey();
+        String apiBase = getOpenAIApiBase();
+        int topK = properties.getMemosTopK();
+
         return String.format("""
             {
               "user_id": "%s",
               "session_id": "%s_session",
-              "backend": {
-                "chat_model": {
-                  "backend": "openai",
-                  "config": {
-                    "model_name_or_path": "gpt-4o-mini",
-                    "api_key": "%s",
-                    "api_base": "%s"
-                  }
+              "enable_textual_memory": true,
+              "enable_activation_memory": false,
+              "top_k": %d,
+              "chat_model": {
+                "backend": "openai",
+                "config": {
+                  "model_name_or_path": "gpt-4o-mini",
+                  "api_key": "%s",
+                  "api_base": "%s",
+                  "temperature": 0.5
                 }
               },
-              "config": {
-                "max_turns_window": 20,
-                "top_k": %d,
-                "enable_textual_memory": true,
-                "enable_activation_memory": false,
-                "enable_parametric_memory": false
+              "mem_reader": {
+                "backend": "simple_struct",
+                "config": {
+                  "llm": {
+                    "backend": "openai",
+                    "config": {
+                      "model_name_or_path": "gpt-4o-mini",
+                      "api_key": "%s",
+                      "api_base": "%s",
+                      "temperature": 0.5
+                    }
+                  },
+                  "embedder": {
+                    "backend": "universal_api",
+                    "config": {
+                      "provider": "openai",
+                      "api_key": "%s",
+                      "model_name_or_path": "text-embedding-3-small",
+                      "base_url": "%s"
+                    }
+                  },
+                  "chunker": {
+                    "backend": "sentence",
+                    "config": {
+                      "tokenizer_or_token_counter": "gpt2",
+                      "chunk_size": 512,
+                      "chunk_overlap": 128,
+                      "min_sentences_per_chunk": 1
+                    }
+                  }
+                }
               }
             }
-            """, 
-            escape(userId), 
+            """,
             escape(userId),
-            escape(getOpenAIApiKey()),
-            escape(getOpenAIApiBase()),
-            properties.getMemosTopK()
+            escape(userId),
+            topK,
+            escape(apiKey),
+            escape(apiBase),
+            escape(apiKey),
+            escape(apiBase),
+            escape(apiKey),
+            escape(apiBase)
         );
     }
 

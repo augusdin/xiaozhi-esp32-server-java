@@ -15,9 +15,10 @@ public class Mem0Client {
 
     public Mem0Client(MemoryProperties properties) {
         this.properties = properties;
+        long timeout = Math.max(3000, properties.getMem0TimeoutMs());
         this.http = new OkHttpClient.Builder()
-                .connectTimeout(Duration.ofMillis(properties.getMem0TimeoutMs()))
-                .readTimeout(Duration.ofMillis(properties.getMem0TimeoutMs()))
+                .connectTimeout(Duration.ofMillis(timeout))
+                .readTimeout(Duration.ofMillis(timeout))
                 .build();
     }
 
@@ -39,8 +40,9 @@ public class Mem0Client {
                     .post(RequestBody.create(json, MediaType.parse("application/json")))
                     .build();
             try (Response resp = http.newCall(request).execute()) {
+                String body = resp.body() != null ? resp.body().string() : "";
                 if (!resp.isSuccessful()) {
-                    logger.warn("Mem0 addMemory failed: status={}", resp.code());
+                    logger.warn("Mem0 addMemory failed: status={} body={}", resp.code(), body);
                 }
             }
         } catch (Exception e) {
@@ -53,4 +55,3 @@ public class Mem0Client {
         return s.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 }
-

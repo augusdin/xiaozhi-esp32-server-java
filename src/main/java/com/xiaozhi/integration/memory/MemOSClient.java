@@ -79,11 +79,12 @@ public class MemOSClient {
                     
             try (Response resp = http.newCall(request).execute()) {
                 if (!resp.isSuccessful() || resp.body() == null) {
-                    logger.warn("MemOS search failed for user {}: status={}", userId, resp.code());
+                    String body = resp.body() != null ? resp.body().string() : "";
+                    logger.warn("MemOS search failed for user {}: status={} body={}", userId, resp.code(), body);
                     return null;
                 }
-                
-                return parseSearchResponse(resp.body().string());
+                String body = resp.body().string();
+                return parseSearchResponse(body);
             }
             
         } catch (Exception e) {
@@ -199,10 +200,11 @@ public class MemOSClient {
                     .build();
                     
             try (Response resp = http.newCall(request).execute()) {
+                String body = resp.body() != null ? resp.body().string() : "";
                 if (resp.isSuccessful()) {
-                    logger.debug("MemOS memory stored successfully for user: {}", userId);
+                    logger.debug("MemOS memory stored successfully for user: {} resp={}", userId, body);
                 } else {
-                    logger.warn("MemOS memory storage failed for user {}: status={}", userId, resp.code());
+                    logger.warn("MemOS memory storage failed for user {}: status={} body={}", userId, resp.code(), body);
                 }
             }
             
@@ -216,4 +218,3 @@ public class MemOSClient {
         return s.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 }
-
