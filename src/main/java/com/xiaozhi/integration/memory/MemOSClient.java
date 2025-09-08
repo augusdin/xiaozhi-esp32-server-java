@@ -146,12 +146,23 @@ public class MemOSClient {
             
             List<String> memories = new ArrayList<>();
             
-            // 处理文本记忆
+            // 处理文本记忆（兼容两种返回结构）
             if (data.has("text_mem") && data.get("text_mem").isArray()) {
                 for (JsonNode memNode : data.get("text_mem")) {
+                    // 1) 直接是记忆节点
                     String content = extractMemoryContent(memNode);
                     if (content != null && !content.isBlank()) {
                         memories.add(content);
+                        continue;
+                    }
+                    // 2) 产品API返回形如 { cube_id, memories: [ { id, memory, metadata... }, ... ] }
+                    if (memNode.has("memories") && memNode.get("memories").isArray()) {
+                        for (JsonNode inner : memNode.get("memories")) {
+                            String c = extractMemoryContent(inner);
+                            if (c != null && !c.isBlank()) {
+                                memories.add(c);
+                            }
+                        }
                     }
                 }
             }
